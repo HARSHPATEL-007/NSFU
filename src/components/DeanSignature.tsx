@@ -20,7 +20,7 @@ export const DeanSignature: React.FC<DeanSignatureProps> = ({
   return (
     <svg
       xmlns="http://www.w3.org/2000/svg"
-      viewBox="310 10 460 305"
+      viewBox="310 5 465 315"
       className={`object-contain select-none inline-block ${className}`}
       style={{ width, height }}
       aria-label="Official Signature of Dean, School of Doctoral Studies and Research"
