@@ -1,0 +1,6 @@
+{
+  "name": "NFSU SDSR RPC Processing Portal",
+  "description": "Internal portal for the Office of SDSR to process Ph.D. Research Progress Committee (RPC) requests, draft official letters, and obtain Dean approval.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

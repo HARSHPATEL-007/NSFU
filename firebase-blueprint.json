@@ -1,0 +1,184 @@
+{
+  "entities": {
+    "User": {
+      "title": "User",
+      "description": "User profile with role-based access for SDSR Office or Dean",
+      "type": "object",
+      "properties": {
+        "email": { "type": "string", "format": "email" },
+        "displayName": { "type": "string" },
+        "role": { "type": "string", "enum": ["SDSR_OFFICE", "DEAN_SDSR"] },
+        "designation": { "type": "string" },
+        "department": { "type": "string" },
+        "createdAt": { "type": "string" }
+      },
+      "required": ["email", "displayName", "role"]
+    },
+    "Scholar": {
+      "title": "Scholar",
+      "description": "Ph.D. research scholar details registered at NFSU",
+      "type": "object",
+      "properties": {
+        "name": { "type": "string" },
+        "enrollmentNo": { "type": "string" },
+        "school": { "type": "string" },
+        "department": { "type": "string" },
+        "guideName": { "type": "string" },
+        "guideDesignation": { "type": "string" },
+        "guideEmail": { "type": "string" },
+        "coGuideName": { "type": "string" },
+        "registrationDate": { "type": "string" },
+        "researchTopic": { "type": "string" },
+        "contactDetails": { "type": "string" },
+        "currentRpcNo": { "type": "number" },
+        "status": { "type": "string" }
+      },
+      "required": ["name", "enrollmentNo", "school", "guideName"]
+    },
+    "RpcMember": {
+      "title": "RpcMember",
+      "description": "Internal or external expert committee member",
+      "type": "object",
+      "properties": {
+        "name": { "type": "string" },
+        "designation": { "type": "string" },
+        "department": { "type": "string" },
+        "schoolOrInstitution": { "type": "string" },
+        "location": { "type": "string" },
+        "email": { "type": "string" },
+        "phone": { "type": "string" },
+        "memberType": { "type": "string", "enum": ["INTERNAL", "EXTERNAL_1", "EXTERNAL_2", "GUIDE", "CO_GUIDE"] },
+        "isActive": { "type": "boolean" }
+      },
+      "required": ["name", "designation", "schoolOrInstitution", "memberType"]
+    },
+    "RpcRecord": {
+      "title": "RpcRecord",
+      "description": "Research Progress Committee meeting application and workflow state",
+      "type": "object",
+      "properties": {
+        "scholarId": { "type": "string" },
+        "rpcNumber": { "type": "number" },
+        "rpcDate": { "type": "string" },
+        "meetingTime": { "type": "string" },
+        "meetingMode": { "type": "string" },
+        "venue": { "type": "string" },
+        "status": { 
+          "type": "string",
+          "enum": [
+            "NEW",
+            "IN_VERIFICATION",
+            "DRAFTED",
+            "PENDING_DEAN_APPROVAL",
+            "RETURNED_FOR_CORRECTION",
+            "RESUBMITTED",
+            "APPROVED"
+          ]
+        },
+        "requestDetails": { "type": "string" },
+        "rpcMembers": { "type": "array" },
+        "letterData": { "type": "object" },
+        "draftDocumentReference": { "type": "string" },
+        "approvedDocumentReference": { "type": "string" },
+        "createdBy": { "type": "string" },
+        "createdAt": { "type": "string" },
+        "updatedBy": { "type": "string" },
+        "updatedAt": { "type": "string" },
+        "forwardedBy": { "type": "string" },
+        "forwardedAt": { "type": "string" },
+        "approvedBy": { "type": "string" },
+        "approvedAt": { "type": "string" },
+        "returnedBy": { "type": "string" },
+        "returnedAt": { "type": "string" },
+        "returnRemarks": { "type": "string" },
+        "version": { "type": "number" }
+      },
+      "required": ["scholarId", "rpcNumber", "status"]
+    },
+    "AuditLog": {
+      "title": "AuditLog",
+      "description": "Chronological immutable audit log for RPC state transitions",
+      "type": "object",
+      "properties": {
+        "rpcRecordId": { "type": "string" },
+        "scholarId": { "type": "string" },
+        "action": { "type": "string" },
+        "performedBy": { "type": "string" },
+        "userRole": { "type": "string" },
+        "details": { "type": "string" },
+        "timestamp": { "type": "string" }
+      },
+      "required": ["rpcRecordId", "action", "performedBy", "timestamp"]
+    },
+    "Document": {
+      "title": "Document",
+      "description": "Official generated letter version snapshot",
+      "type": "object",
+      "properties": {
+        "rpcRecordId": { "type": "string" },
+        "documentType": { "type": "string", "enum": ["DRAFT", "APPROVED"] },
+        "version": { "type": "number" },
+        "refNo": { "type": "string" },
+        "letterContent": { "type": "string" },
+        "dynamicData": { "type": "object" },
+        "generatedAt": { "type": "string" },
+        "signedBy": { "type": "string" },
+        "signedAt": { "type": "string" },
+        "isImmutable": { "type": "boolean" }
+      },
+      "required": ["rpcRecordId", "documentType", "version", "refNo"]
+    },
+    "EmailNotification": {
+      "title": "EmailNotification",
+      "description": "Pending email notification event queued for automated dispatch upon RPC status change",
+      "type": "object",
+      "properties": {
+        "recipientEmail": { "type": "string", "format": "email" },
+        "recipientName": { "type": "string" },
+        "recipientRole": { "type": "string", "enum": ["DEAN_SDSR", "SDSR_OFFICE", "GUIDE", "SCHOLAR"] },
+        "eventType": { "type": "string", "enum": ["RPC_PENDING_DEAN_APPROVAL", "RPC_RETURNED_FOR_CORRECTION"] },
+        "rpcRecordId": { "type": "string" },
+        "scholarId": { "type": "string" },
+        "scholarName": { "type": "string" },
+        "enrollmentNo": { "type": "string" },
+        "rpcNumber": { "type": "number" },
+        "subject": { "type": "string" },
+        "emailBody": { "type": "string" },
+        "status": { "type": "string", "enum": ["PENDING", "SENT", "FAILED"] },
+        "createdAt": { "type": "string" },
+        "metadata": { "type": "object" }
+      },
+      "required": ["recipientEmail", "eventType", "rpcRecordId", "scholarId", "status", "createdAt"]
+    }
+  },
+  "firestore": {
+    "/users/{userId}": {
+      "schema": "User",
+      "description": "System users with designated roles"
+    },
+    "/scholars/{scholarId}": {
+      "schema": "Scholar",
+      "description": "Ph.D. Scholars enrolled at NFSU"
+    },
+    "/rpcMembers/{memberId}": {
+      "schema": "RpcMember",
+      "description": "Pool of Internal and External expert committee members"
+    },
+    "/rpcRecords/{rpcRecordId}": {
+      "schema": "RpcRecord",
+      "description": "Individual RPC meeting requests and workflow status"
+    },
+    "/auditLogs/{logId}": {
+      "schema": "AuditLog",
+      "description": "Immutable audit entries"
+    },
+    "/documents/{docId}": {
+      "schema": "Document",
+      "description": "Draft and approved official RPC letters"
+    },
+    "/emailNotifications/{notificationId}": {
+      "schema": "EmailNotification",
+      "description": "Pending and logged email notification events triggered by RPC state changes"
+    }
+  }
+}

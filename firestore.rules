@@ -1,0 +1,82 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    function isAuthenticated() {
+      return request.auth != null;
+    }
+
+    function getUserData() {
+      return get(/databases/$(database)/documents/users/$(request.auth.uid)).data;
+    }
+
+    function isDean() {
+      return isAuthenticated() && (
+        getUserData().role == 'DEAN_SDSR' ||
+        request.auth.token.email == 'dean.sdsr@nfsu.ac.in'
+      );
+    }
+
+    function isOffice() {
+      return isAuthenticated() && (
+        getUserData().role == 'SDSR_OFFICE' ||
+        request.auth.token.email == 'office@nfsu.ac.in' ||
+        !exists(/databases/$(database)/documents/users/$(request.auth.uid))
+      );
+    }
+
+    // Users collection
+    match /users/{userId} {
+      allow read: if isAuthenticated();
+      allow write: if isAuthenticated() && (request.auth.uid == userId || isDean());
+    }
+
+    // Scholars collection
+    match /scholars/{scholarId} {
+      allow read: if isAuthenticated();
+      allow write: if isAuthenticated();
+    }
+
+    // RPC Members collection
+    match /rpcMembers/{memberId} {
+      allow read: if isAuthenticated();
+      allow write: if isAuthenticated();
+    }
+
+    // RPC Records collection
+    match /rpcRecords/{recordId} {
+      allow read: if isAuthenticated();
+      allow create: if isAuthenticated();
+      allow update: if isAuthenticated();
+      allow delete: if false; // RPC records must never be deleted
+    }
+
+    // Audit logs are append-only and immutable
+    match /auditLogs/{logId} {
+      allow read: if isAuthenticated();
+      allow create: if isAuthenticated();
+      allow update, delete: if false;
+    }
+
+    // Documents (Draft and Approved Letters)
+    match /documents/{docId} {
+      allow read: if isAuthenticated();
+      allow create: if isAuthenticated();
+      allow update: if isAuthenticated() && (!resource.data.isImmutable);
+      allow delete: if false;
+    }
+
+    // Email Notifications collection
+    match /emailNotifications/{notificationId} {
+      allow read: if isAuthenticated();
+      allow create: if isAuthenticated();
+      allow update: if isAuthenticated();
+      allow delete: if false;
+    }
+
+    // System connection test doc
+    match /test/{testId} {
+      allow read, write: if true;
+    }
+  }
+}

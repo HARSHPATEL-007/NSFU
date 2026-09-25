@@ -1,0 +1,115 @@
+@import "tailwindcss";
+
+@custom-variant dark (&:where(.dark, .dark *));
+@custom-variant night (&:where(.night, .night *));
+
+/* Theme Variables */
+:root {
+  --bg-main: #f5f5f4;
+  --bg-card: #ffffff;
+  --bg-card-subtle: #fafaf9;
+  --border-color: #e7e5e4;
+  --text-main: #1c1917;
+  --text-muted: #78716c;
+}
+
+.dark {
+  --bg-main: #18181b;       /* Zinc 900 */
+  --bg-card: #27272a;       /* Zinc 800 */
+  --bg-card-subtle: #202023;
+  --border-color: #3f3f46;  /* Zinc 700 */
+  --text-main: #f4f4f5;     /* Zinc 100 */
+  --text-muted: #a1a1aa;    /* Zinc 400 */
+  color-scheme: dark;
+}
+
+.night {
+  --bg-main: #000000;       /* Pitch Black OLED */
+  --bg-card: #09090b;       /* Zinc 950 */
+  --bg-card-subtle: #121215;
+  --border-color: #27272a;  /* Zinc 800 */
+  --text-main: #fafafa;
+  --text-muted: #94a3b8;
+  color-scheme: dark;
+}
+
+/* Global body & root transitions */
+html {
+  transition: background-color 0.2s ease, color 0.2s ease, border-color 0.2s ease;
+}
+
+html.dark body {
+  background-color: var(--bg-main);
+  color: var(--text-main);
+}
+
+/* Automatic Dark & Night component styling */
+.dark .bg-stone-100 {
+  background-color: var(--bg-main) !important;
+}
+
+.dark .bg-white:not(.official-letter-paper, .official-letter-paper *) {
+  background-color: var(--bg-card) !important;
+  color: var(--text-main) !important;
+}
+
+.dark .bg-stone-50:not(.official-letter-paper, .official-letter-paper *) {
+  background-color: var(--bg-card-subtle) !important;
+}
+
+.dark .text-stone-900:not(.official-letter-paper, .official-letter-paper *) {
+  color: var(--text-main) !important;
+}
+
+.dark .text-stone-800:not(.official-letter-paper, .official-letter-paper *) {
+  color: #e4e4e7 !important;
+}
+
+.dark .text-stone-700:not(.official-letter-paper, .official-letter-paper *) {
+  color: #d4d4d8 !important;
+}
+
+.dark .text-stone-600:not(.official-letter-paper, .official-letter-paper *) {
+  color: var(--text-muted) !important;
+}
+
+.dark .text-stone-500:not(.official-letter-paper, .official-letter-paper *) {
+  color: #a1a1aa !important;
+}
+
+.dark .border-stone-200:not(.official-letter-paper, .official-letter-paper *),
+.dark .border-stone-300:not(.official-letter-paper, .official-letter-paper *) {
+  border-color: var(--border-color) !important;
+}
+
+.dark .divide-stone-200 > :not([hidden]) ~ :not([hidden]),
+.dark .divide-stone-300 > :not([hidden]) ~ :not([hidden]) {
+  border-color: var(--border-color) !important;
+}
+
+/* Form controls in dark & night modes */
+.dark input:not([type="checkbox"]):not([type="radio"]),
+.dark select,
+.dark textarea {
+  background-color: var(--bg-card-subtle) !important;
+  color: var(--text-main) !important;
+  border-color: var(--border-color) !important;
+}
+
+.dark input::placeholder,
+.dark textarea::placeholder {
+  color: #71717a !important;
+}
+
+/* Table rows hover */
+.dark tr:hover:not(.official-letter-paper *) {
+  background-color: rgba(255, 255, 255, 0.03);
+}
+
+.dark .hover\:bg-stone-50:hover:not(.official-letter-paper, .official-letter-paper *) {
+  background-color: rgba(255, 255, 255, 0.05) !important;
+}
+
+.dark .hover\:bg-stone-100:hover:not(.official-letter-paper, .official-letter-paper *) {
+  background-color: rgba(255, 255, 255, 0.08) !important;
+}
