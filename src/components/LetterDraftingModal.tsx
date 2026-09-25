@@ -2,8 +2,9 @@ import React, { useState, useEffect } from 'react';
 import { RpcRecord, OfficialLetterData, UserProfile } from '../types';
 import { OfficialRpcLetter } from './OfficialRpcLetter';
 import { saveDraftLetter, validateForForwarding } from '../services/dataService';
-import { X, Save, Send, Download, Check, AlertCircle, Edit3, Eye, Loader2, Printer } from 'lucide-react';
+import { X, Save, Send, Download, Check, AlertCircle, Edit3, Eye, Loader2, Printer, FileDown } from 'lucide-react';
 import { downloadLetterElementAsPdf, generateLetterPdfFilename } from '../utils/pdfExport';
+import { downloadApprovedRpcLetterDocx } from '../utils/docxExport';
 
 interface LetterDraftingModalProps {
   isOpen: boolean;
@@ -62,6 +63,7 @@ export const LetterDraftingModal: React.FC<LetterDraftingModalProps> = ({
   const [activeSubTab, setActiveSubTab] = useState<'preview' | 'edit'>('preview');
   const [saving, setSaving] = useState(false);
   const [isDownloadingPdf, setIsDownloadingPdf] = useState(false);
+  const [isDownloadingDocx, setIsDownloadingDocx] = useState(false);
   const [saveSuccessNotice, setSaveSuccessNotice] = useState(false);
   const [errorMessage, setErrorMessage] = useState('');
 
@@ -103,6 +105,18 @@ export const LetterDraftingModal: React.FC<LetterDraftingModalProps> = ({
       console.error('Failed to export letter as PDF:', err);
     } finally {
       setIsDownloadingPdf(false);
+    }
+  };
+
+  const handleDownloadDocx = async () => {
+    if (isDownloadingDocx) return;
+    setIsDownloadingDocx(true);
+    try {
+      await downloadApprovedRpcLetterDocx(record, formData, record.status === 'APPROVED');
+    } catch (err) {
+      console.error('Failed to export letter as DOCX:', err);
+    } finally {
+      setIsDownloadingDocx(false);
     }
   };
 
@@ -361,7 +375,7 @@ export const LetterDraftingModal: React.FC<LetterDraftingModalProps> = ({
               id="btn-download-draft-pdf"
               type="button"
               className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold text-stone-800 bg-white hover:bg-stone-50 rounded border border-stone-300 shadow-xs transition cursor-pointer disabled:opacity-60"
-              title="Download letter as PDF via jsPDF"
+              title="Download letter as fullsize A4 PDF"
             >
               {isDownloadingPdf ? (
                 <>
@@ -372,6 +386,27 @@ export const LetterDraftingModal: React.FC<LetterDraftingModalProps> = ({
                 <>
                   <Download className="w-3.5 h-3.5" />
                   Download as PDF
+                </>
+              )}
+            </button>
+
+            <button
+              onClick={handleDownloadDocx}
+              disabled={isDownloadingDocx}
+              id="btn-download-draft-docx"
+              type="button"
+              className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold text-white bg-[#15244C] hover:bg-[#1f3570] rounded shadow-xs transition cursor-pointer disabled:opacity-60 ring-1 ring-blue-900/30"
+              title="Download letter as editable Microsoft Word document (.docx)"
+            >
+              {isDownloadingDocx ? (
+                <>
+                  <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                  Generating DOCX...
+                </>
+              ) : (
+                <>
+                  <FileDown className="w-3.5 h-3.5" />
+                  Download as DOCX
                 </>
               )}
             </button>

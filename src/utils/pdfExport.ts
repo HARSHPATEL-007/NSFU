@@ -21,7 +21,7 @@ export function generateLetterPdfFilename(
     record?.enrollmentNo ||
     record?.scholarName?.replace(/[^a-zA-Z0-9]/g, '_') ||
     'Scholar';
-  const statusSuffix = record?.status === 'APPROVED' ? 'APPROVED' : 'DRAFT';
+  const statusSuffix = record?.status === 'APPROVED' ? 'APPROVED' : 'OFFICIAL';
   return `NFSU_SDSR_RPC_${rpcNo}_${scholarIdentifier}_${statusSuffix}.pdf`;
 }
 
@@ -47,42 +47,48 @@ export function triggerFileDownload(blob: Blob, filename: string): void {
 }
 
 /**
- * Downloads a rendered HTML letter element as a high-resolution A4 PDF using jsPDF and html2canvas-pro.
+ * Downloads a rendered HTML letter element as a high-resolution, full-size A4 PDF using jsPDF and html2canvas-pro.
+ * Ensures the letter fills standard A4 (210mm x 297mm) edge-to-edge without shrinking or double-margins.
+ * Dean Approval signature (deansign.svg) is rendered crisply with lossless fidelity.
  */
 export async function downloadLetterElementAsPdf(
   element: HTMLElement,
   filename: string,
   record?: RpcRecord
 ): Promise<void> {
-  // Capture the element as high-DPI canvas using html2canvas-pro (supports modern CSS / oklch / lab)
+  // Capture the element as high-DPI canvas using html2canvas-pro
   const canvas = await html2canvas(element, {
-    scale: 2, // 2x DPI scale ensures crisp vector-like text and official letterhead resolution
+    scale: 2.5, // 2.5x DPI scale ensures crisp vector-like text, logos, and Dean approval signature
     useCORS: true,
     allowTaint: true,
     logging: false,
     backgroundColor: '#ffffff',
     scrollX: 0,
     scrollY: 0,
-    windowWidth: Math.max(element.scrollWidth, 800),
-    onclone: (clonedDoc, clonedEl) => {
-      // Ensure elements marked with .print:hidden or action buttons are hidden in the canvas
+    windowWidth: 800,
+    onclone: (_clonedDoc, clonedEl) => {
+      // Ensure UI buttons, action bars, and print-hidden elements are hidden in the canvas
       const printHidden = clonedEl.querySelectorAll(
-        '.print\\:hidden, #btn-print-letter, #btn-download-letter, #btn-download-letter-pdf, #btn-download-letter-pdf-modal, button'
+        '.print\\:hidden, #btn-print-letter, #btn-download-letter, #btn-download-letter-pdf, #btn-download-letter-docx, #btn-download-letter-png, button'
       );
       printHidden.forEach((item) => {
         (item as HTMLElement).style.display = 'none';
       });
 
-      // Normalize cloned styling for crisp white paper output
+      // Normalize cloned styling for crisp official white paper output
       const el = clonedEl as HTMLElement;
       el.style.backgroundColor = '#ffffff';
       el.style.boxShadow = 'none';
       el.style.border = 'none';
       el.style.margin = '0 auto';
+      el.style.width = '800px';
+      el.style.maxWidth = '800px';
+      el.style.minHeight = 'auto'; // allow natural height so no false empty page is added
     },
   });
 
-  const imgData = canvas.toDataURL('image/jpeg', 0.98);
+  // Lossless PNG data URL ensures fine serif strokes and the signature ink don't get JPEG artifacts
+  const imgData = canvas.toDataURL('image/png');
 
   // Standard A4 dimensions in mm: 210mm x 297mm
   const pdf = new jsPDF({
@@ -94,30 +100,29 @@ export async function downloadLetterElementAsPdf(
 
   const pageWidth = 210;
   const pageHeight = 297;
-  const margin = 8; // 8mm margin around page for institutional border aesthetics
-  const printableWidth = pageWidth - margin * 2;
-  const printableHeight = pageHeight - margin * 2;
 
-  // Calculate proportional height
-  const imgWidth = printableWidth;
-  const imgHeight = (canvas.height * printableWidth) / canvas.width;
+  // The HTML letter component already contains its own institutional paper padding.
+  // Rendering full-width (210mm) with 0 external margin gives true fullsize A4 scaling!
+  const imgWidth = pageWidth;
+  const calculatedImgHeight = (canvas.height * pageWidth) / canvas.width;
 
-  if (imgHeight <= printableHeight) {
-    // Fits comfortably on a single A4 page
-    pdf.addImage(imgData, 'JPEG', margin, margin, imgWidth, imgHeight, undefined, 'FAST');
+  // If the letter fits within normal single A4 proportions (e.g. up to 308mm), fit it cleanly on a single fullsize page
+  if (calculatedImgHeight <= 308) {
+    const finalHeight = Math.min(calculatedImgHeight, pageHeight);
+    pdf.addImage(imgData, 'PNG', 0, 0, imgWidth, finalHeight, undefined, 'FAST');
   } else {
-    // Multi-page slicing for multi-page doctoral progress notifications
-    let remainingHeight = imgHeight;
-    let positionY = margin;
+    // Multi-page slicing if letter exceeds page bounds
+    let remainingHeight = calculatedImgHeight;
+    let positionY = 0;
 
-    pdf.addImage(imgData, 'JPEG', margin, positionY, imgWidth, imgHeight, undefined, 'FAST');
-    remainingHeight -= printableHeight;
+    pdf.addImage(imgData, 'PNG', 0, positionY, imgWidth, calculatedImgHeight, undefined, 'FAST');
+    remainingHeight -= pageHeight;
 
-    while (remainingHeight > 0) {
-      positionY = positionY - printableHeight;
+    while (remainingHeight > 5) {
+      positionY = positionY - pageHeight;
       pdf.addPage();
-      pdf.addImage(imgData, 'JPEG', margin, positionY, imgWidth, imgHeight, undefined, 'FAST');
-      remainingHeight -= printableHeight;
+      pdf.addImage(imgData, 'PNG', 0, positionY, imgWidth, calculatedImgHeight, undefined, 'FAST');
+      remainingHeight -= pageHeight;
     }
   }
 
@@ -125,10 +130,10 @@ export async function downloadLetterElementAsPdf(
   const rpcNo = record?.rpcNumber || 'RPC';
   const scholarName = record?.scholarName || 'Doctoral Scholar';
   pdf.setProperties({
-    title: `NFSU SDSR RPC ${rpcNo} Approval Letter - ${scholarName}`,
-    subject: 'Official Ph.D. Research Progress Committee Approval Notification',
+    title: `NFSU SDSR RPC ${rpcNo} Official Approval Letter - ${scholarName}`,
+    subject: 'Official Ph.D. Research Progress Committee Approval Notification with Dean Signature',
     author: 'National Forensic Sciences University - School of Doctoral Studies & Research (SDSR)',
-    keywords: 'NFSU, SDSR, RPC, Ph.D., Official Approval Letter, Archival Record',
+    keywords: 'NFSU, SDSR, RPC, Ph.D., Official Approval Letter, Dean Signature, Archival Record',
     creator: 'NFSU SDSR RPC Digital Portal (jsPDF)',
   });
 
@@ -142,9 +147,49 @@ export async function downloadLetterElementAsPdf(
 }
 
 /**
+ * Downloads a rendered HTML letter element as a high-resolution PNG image.
+ */
+export async function downloadLetterElementAsImage(
+  element: HTMLElement,
+  filename: string
+): Promise<void> {
+  const canvas = await html2canvas(element, {
+    scale: 2.5,
+    useCORS: true,
+    allowTaint: true,
+    logging: false,
+    backgroundColor: '#ffffff',
+    scrollX: 0,
+    scrollY: 0,
+    windowWidth: 800,
+    onclone: (_clonedDoc, clonedEl) => {
+      const printHidden = clonedEl.querySelectorAll(
+        '.print\\:hidden, #btn-print-letter, #btn-download-letter, #btn-download-letter-pdf, #btn-download-letter-docx, #btn-download-letter-png, button'
+      );
+      printHidden.forEach((item) => {
+        (item as HTMLElement).style.display = 'none';
+      });
+      const el = clonedEl as HTMLElement;
+      el.style.backgroundColor = '#ffffff';
+      el.style.boxShadow = 'none';
+      el.style.border = 'none';
+      el.style.margin = '0 auto';
+      el.style.width = '800px';
+      el.style.maxWidth = '800px';
+      el.style.minHeight = 'auto';
+    },
+  });
+
+  canvas.toBlob((blob) => {
+    if (blob) {
+      const imgFilename = filename.replace(/\.pdf$/i, '.png');
+      triggerFileDownload(blob, imgFilename);
+    }
+  }, 'image/png');
+}
+
+/**
  * High-level helper to download an approved RPC letter as PDF.
- * If targetElement is provided, it captures that element.
- * Otherwise, it attempts to find '#nfsu-official-letter-sheet' in the DOM.
  */
 export async function downloadApprovedRpcLetterPdf(
   record: RpcRecord,

@@ -113,3 +113,38 @@ html.dark body {
 .dark .hover\:bg-stone-100:hover:not(.official-letter-paper, .official-letter-paper *) {
   background-color: rgba(255, 255, 255, 0.08) !important;
 }
+
+/* Print styles for official institutional letterhead */
+@media print {
+  body {
+    background-color: #ffffff !important;
+    color: #000000 !important;
+  }
+
+  /* Hide navigation, action bars, backdrop, modals chrome */
+  nav,
+  header:not(.official-letter-paper header),
+  .print\:hidden,
+  button,
+  .no-print {
+    display: none !important;
+  }
+
+  /* Expand official letter to full A4 page width with clean margins */
+  .official-letter-paper {
+    width: 100% !important;
+    max-width: 100% !important;
+    margin: 0 auto !important;
+    padding: 12mm 16mm !important;
+    border: none !important;
+    box-shadow: none !important;
+    min-height: auto !important;
+    page-break-inside: avoid;
+    break-inside: avoid;
+  }
+
+  @page {
+    size: A4 portrait;
+    margin: 8mm;
+  }
+}

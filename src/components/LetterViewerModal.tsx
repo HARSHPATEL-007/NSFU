@@ -1,8 +1,9 @@
 import React, { useState, useEffect } from 'react';
 import { RpcRecord } from '../types';
 import { OfficialRpcLetter } from './OfficialRpcLetter';
-import { downloadLetterElementAsPdf, generateLetterPdfFilename } from '../utils/pdfExport';
-import { X, Printer, Download, Loader2, CheckCircle2, AlertCircle } from 'lucide-react';
+import { downloadLetterElementAsPdf, downloadLetterElementAsImage, generateLetterPdfFilename } from '../utils/pdfExport';
+import { downloadApprovedRpcLetterDocx } from '../utils/docxExport';
+import { X, Printer, Download, Loader2, CheckCircle2, AlertCircle, Image, FileDown } from 'lucide-react';
 
 interface LetterViewerModalProps {
   isOpen: boolean;
@@ -18,6 +19,8 @@ export const LetterViewerModal: React.FC<LetterViewerModalProps> = ({
   autoDownload = false,
 }) => {
   const [isDownloading, setIsDownloading] = useState(false);
+  const [isDownloadingDocx, setIsDownloadingDocx] = useState(false);
+  const [isDownloadingImage, setIsDownloadingImage] = useState(false);
   const [downloadSuccess, setDownloadSuccess] = useState(false);
   const [pdfError, setPdfError] = useState('');
 
@@ -66,6 +69,41 @@ export const LetterViewerModal: React.FC<LetterViewerModalProps> = ({
     }
   };
 
+  const handleDownloadDocx = async () => {
+    if (isDownloadingDocx) return;
+    setIsDownloadingDocx(true);
+    setPdfError('');
+    try {
+      await downloadApprovedRpcLetterDocx(record, record.letterData, isApproved);
+      setDownloadSuccess(true);
+      setTimeout(() => setDownloadSuccess(false), 4000);
+    } catch (err: any) {
+      console.error('Failed to export letter as DOCX:', err);
+      setPdfError(err?.message || 'Failed to generate DOCX. Please try again.');
+    } finally {
+      setIsDownloadingDocx(false);
+    }
+  };
+
+  const handleDownloadImage = async () => {
+    const el = document.getElementById('nfsu-official-letter-sheet');
+    if (!el || isDownloadingImage) return;
+
+    setIsDownloadingImage(true);
+    setPdfError('');
+    try {
+      const filename = generateLetterPdfFilename(record, record.letterData);
+      await downloadLetterElementAsImage(el as HTMLElement, filename);
+      setDownloadSuccess(true);
+      setTimeout(() => setDownloadSuccess(false), 4000);
+    } catch (err: any) {
+      console.error('Failed to export letter as PNG:', err);
+      setPdfError(err?.message || 'Failed to generate image. Please try again.');
+    } finally {
+      setIsDownloadingImage(false);
+    }
+  };
+
   // Auto-download trigger if opened directly via a Download action
   useEffect(() => {
     if (isOpen && autoDownload && !isDownloading) {
@@ -87,15 +125,15 @@ export const LetterViewerModal: React.FC<LetterViewerModalProps> = ({
     >
       <div className="bg-stone-100 rounded-xl shadow-2xl max-w-5xl w-full border border-stone-300 flex flex-col max-h-[95vh] overflow-hidden">
         {/* Header */}
-        <div className="px-6 py-3.5 bg-white border-b border-stone-200 flex items-center justify-between print:hidden">
+        <div className="px-6 py-3.5 bg-white border-b border-stone-200 flex flex-wrap items-center justify-between gap-3 print:hidden">
           <div>
             <div className="flex items-center gap-2">
               <h2 className="text-base font-bold text-stone-900">
                 Official Research Progress Committee Notification
               </h2>
               {isApproved ? (
-                <span className="px-2 py-0.5 rounded-full text-xs font-semibold bg-emerald-100 text-emerald-800 border border-emerald-300">
-                  Approved & Finalized
+                <span className="px-2.5 py-0.5 rounded-full text-xs font-semibold bg-emerald-100 text-emerald-800 border border-emerald-300">
+                  Approved with Dean Signature
                 </span>
               ) : (
                 <span className="px-2 py-0.5 rounded-full text-xs font-semibold bg-amber-100 text-amber-800 border border-amber-300">
@@ -112,10 +150,11 @@ export const LetterViewerModal: React.FC<LetterViewerModalProps> = ({
             {downloadSuccess && (
               <span className="hidden sm:inline-flex items-center gap-1 text-xs text-emerald-700 bg-emerald-50 px-2 py-1 rounded border border-emerald-200 font-medium animate-fade-in">
                 <CheckCircle2 className="w-3.5 h-3.5" />
-                Saved to Downloads
+                Downloaded!
               </span>
             )}
 
+            {/* Download as PDF Button */}
             <button
               onClick={handleDownloadPdf}
               disabled={isDownloading}
@@ -127,7 +166,7 @@ export const LetterViewerModal: React.FC<LetterViewerModalProps> = ({
                   ? 'bg-emerald-700 hover:bg-emerald-800 text-white ring-1 ring-emerald-600/30'
                   : 'bg-stone-900 hover:bg-stone-800 text-white'
               }`}
-              title="Download official PDF using jsPDF for institutional archival (Ctrl+S / Cmd+S)"
+              title="Download official fullsize A4 PDF with Dean approval signature for institutional archival (Ctrl+S / Cmd+S)"
             >
               {isDownloading ? (
                 <>
@@ -143,6 +182,41 @@ export const LetterViewerModal: React.FC<LetterViewerModalProps> = ({
                   </kbd>
                 </>
               )}
+            </button>
+
+            {/* Download as DOCX Button */}
+            <button
+              onClick={handleDownloadDocx}
+              disabled={isDownloadingDocx}
+              id="btn-download-letter-docx-modal"
+              data-testid="btn-download-docx"
+              type="button"
+              className="inline-flex items-center gap-1.5 px-3.5 py-1.5 text-xs font-semibold rounded shadow-xs transition cursor-pointer disabled:opacity-60 bg-[#15244C] hover:bg-[#1f3570] text-white ring-1 ring-blue-900/30"
+              title="Download official letter in editable Microsoft Word (.docx) format with institutional styling"
+            >
+              {isDownloadingDocx ? (
+                <>
+                  <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                  Generating DOCX...
+                </>
+              ) : (
+                <>
+                  <FileDown className="w-3.5 h-3.5" />
+                  <span>Download DOCX</span>
+                </>
+              )}
+            </button>
+
+            <button
+              onClick={handleDownloadImage}
+              disabled={isDownloadingImage}
+              id="btn-download-letter-png-modal"
+              type="button"
+              className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-stone-700 bg-white hover:bg-stone-50 border border-stone-300 rounded shadow-xs transition cursor-pointer"
+              title="Download high-resolution image"
+            >
+              <Image className="w-3.5 h-3.5 text-stone-600" />
+              Download PNG
             </button>
 
             <button
@@ -175,18 +249,17 @@ export const LetterViewerModal: React.FC<LetterViewerModalProps> = ({
             <div className="flex items-center gap-2">
               <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
               <span>
-                <strong>Official Approved Document:</strong> Signed & sealed by Dean, SDSR. Use <strong>Download as PDF</strong> to archive this official record.
+                <strong>Official Approved Document:</strong> Signed with authentic Dean, SDSR signature (<code>deansign.svg</code>). Use <strong>Download as PDF</strong> to save this official record.
               </span>
             </div>
             {record.approvedDocumentReference && (
-              <span className="font-mono text-[11px] bg-emerald-100/80 text-emerald-800 px-2 py-0.5 rounded border border-emerald-300/60 font-medium">
+              <span className="font-mono text-[11px] font-bold text-emerald-900 bg-emerald-100/80 px-2 py-0.5 rounded border border-emerald-300">
                 Archive Ref: {record.approvedDocumentReference}
               </span>
             )}
           </div>
         )}
 
-        {/* Optional Error Alert */}
         {pdfError && (
           <div className="px-6 py-2 bg-red-50 border-b border-red-200 text-red-800 text-xs flex items-center justify-between">
             <div className="flex items-center gap-2">
@@ -195,7 +268,7 @@ export const LetterViewerModal: React.FC<LetterViewerModalProps> = ({
             </div>
             <button
               onClick={() => setPdfError('')}
-              className="text-red-600 hover:text-red-900 font-semibold"
+              className="text-red-600 hover:text-red-900 font-semibold cursor-pointer"
             >
               Dismiss
             </button>
@@ -208,6 +281,7 @@ export const LetterViewerModal: React.FC<LetterViewerModalProps> = ({
             letterData={record.letterData}
             rpcRecord={record}
             isApproved={isApproved}
+            forceSignature={isApproved}
             showActions={false}
           />
         </div>
@@ -215,3 +289,5 @@ export const LetterViewerModal: React.FC<LetterViewerModalProps> = ({
     </div>
   );
 };
+
+export default LetterViewerModal;
