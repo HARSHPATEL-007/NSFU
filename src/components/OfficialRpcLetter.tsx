@@ -299,8 +299,8 @@ export const OfficialRpcLetter: React.FC<OfficialRpcLetterProps> = ({
       <div
         ref={letterRef}
         id="nfsu-official-letter-sheet"
-        className="official-letter-paper w-full max-w-[840px] bg-white text-stone-950 shadow-md border border-stone-300 p-8 sm:p-12 relative print:shadow-none print:border-none print:p-0 print:m-0 font-serif leading-relaxed select-text"
-        style={{ minHeight: '1100px', backgroundColor: '#ffffff', fontFamily: "'Times New Roman', Times, serif" }}
+        className="official-letter-paper w-full max-w-[800px] bg-white text-stone-950 shadow-md border border-stone-300 px-7 py-6 sm:px-10 sm:py-7 relative print:shadow-none print:border-none print:p-0 print:m-0 font-serif select-text"
+        style={{ width: '800px', maxWidth: '800px', backgroundColor: '#ffffff', fontFamily: "'Times New Roman', Times, serif" }}
       >
         {/* Draft Watermark only if not approved and signature not affixed */}
         {!includeSignature && !isRecordApproved && (
@@ -312,41 +312,41 @@ export const OfficialRpcLetter: React.FC<OfficialRpcLetterProps> = ({
         )}
 
         {/* Letterhead Header Section */}
-        <header className="relative z-10 pb-1 mb-2">
-          <div className="flex items-center justify-between gap-3 sm:gap-4">
+        <header className="relative z-10 pb-0.5 mb-1.5">
+          <div className="flex items-center justify-between gap-2">
             {/* Left: Ministry of Home Affairs Lion Emblem of India */}
-            <div className="shrink-0">
-              <MhaEmblem emblemSize="h-13 sm:h-15 w-auto" />
+            <div className="w-[125px] sm:w-[135px] shrink-0 flex items-center justify-start">
+              <MhaEmblem emblemSize="h-11 sm:h-12 w-auto" />
             </div>
 
             {/* Center: University Bilingual Institutional Titles */}
-            <div className="text-center flex-1 px-1 sm:px-2">
-              <h1 className="text-base sm:text-[18px] md:text-[20px] font-bold text-[#15244C] tracking-wide font-serif mb-0.5 leading-snug">
+            <div className="text-center flex-1 px-1">
+              <h1 className="text-[15px] sm:text-[16px] font-bold text-[#15244C] tracking-wide font-serif mb-0 leading-tight">
                 राष्ट्रीय न्यायालयिक विज्ञान विश्वविद्यालय
               </h1>
-              <p className="text-[11px] sm:text-[12px] md:text-[13px] text-stone-950 font-bold mb-0.5 font-serif">
+              <p className="text-[10px] sm:text-[10.5px] text-stone-950 font-bold mb-0.5 font-serif leading-tight">
                 (राष्ट्रीय महत्त्व का संस्थान, गृह मंत्रालय, भारत सरकार)
               </p>
-              <h2 className="text-base sm:text-[18px] md:text-[20px] font-bold text-[#15244C] tracking-tight font-serif mb-0.5 leading-snug font-['Times_New_Roman',serif]">
+              <h2 className="text-[15px] sm:text-[16px] font-bold text-[#15244C] tracking-tight font-serif mb-0 leading-tight font-['Times_New_Roman',serif]">
                 National Forensic Sciences University
               </h2>
-              <p className="text-[10px] sm:text-[11px] text-stone-800 font-serif leading-tight">
+              <p className="text-[9.5px] sm:text-[10px] text-stone-800 font-serif leading-tight">
                 (An Institution of National Importance under Ministry of Home Affairs, Government of India)
               </p>
             </div>
 
             {/* Right: Official NFSU Crest */}
-            <div className="shrink-0 flex justify-end">
-              <NFSUEmblem id="letter-nfsu-emblem" className="w-16 h-20 sm:w-20 sm:h-24 drop-shadow-xs" />
+            <div className="w-[125px] sm:w-[135px] shrink-0 flex items-center justify-end">
+              <NFSUEmblem id="letter-nfsu-emblem" className="w-14 h-18 sm:w-16 sm:h-20 drop-shadow-xs" />
             </div>
           </div>
 
           {/* Full-width dividing rule matching official specimen */}
-          <hr className="border-t-[1.5px] border-stone-900 mt-2.5 mb-4" />
+          <hr className="border-t-[1.5px] border-stone-900 mt-2 mb-2.5" />
         </header>
 
         {/* Reference Number and Date Line */}
-        <div className="relative z-10 flex justify-between items-baseline mb-6 font-serif text-[13px] sm:text-[14px] font-bold text-stone-950">
+        <div className="relative z-10 flex justify-between items-baseline mb-3 font-serif text-[12px] sm:text-[12.5px] font-bold text-stone-950">
           <div>
             <span>Ref: No: </span>
             <span>{formattedRefNo()}</span>
@@ -358,14 +358,14 @@ export const OfficialRpcLetter: React.FC<OfficialRpcLetterProps> = ({
         </div>
 
         {/* Addressees Section ("To,++") */}
-        <div className="relative z-10 mb-6 text-[13px] sm:text-[14px] leading-snug text-stone-950 font-serif font-bold">
-          <p className="font-bold mb-2">To,++</p>
-          <ol className="list-decimal pl-7 space-y-2.5 font-bold">
+        <div className="relative z-10 mb-2.5 text-[12px] sm:text-[12.5px] leading-[1.3] text-stone-950 font-serif font-bold">
+          <p className="font-bold mb-1">To,++</p>
+          <ol className="list-decimal pl-6 space-y-1.5 font-bold">
             {/* 1. Dean */}
             <li className="pl-1">
               <div>Dean</div>
               <div>{schoolName}</div>
-              <div>NFSU, {letterData.schoolCampus || 'Gandhinagr'}</div>
+              <div>NFSU, {letterData.schoolCampus || 'Gandhinagar'}</div>
             </li>
 
             {/* 2. Guide / Supervisor */}
@@ -426,7 +426,7 @@ export const OfficialRpcLetter: React.FC<OfficialRpcLetterProps> = ({
         </div>
 
         {/* Subject Line (Matching exact specimen format) */}
-        <div className="relative z-10 my-5 text-[13px] sm:text-[14px] font-bold text-stone-950 font-serif leading-snug">
+        <div className="relative z-10 my-2.5 text-[12px] sm:text-[12.5px] font-bold text-stone-950 font-serif leading-snug">
           <span>Subject: </span>
           <span>
             {letterData.subject || (
@@ -438,7 +438,7 @@ export const OfficialRpcLetter: React.FC<OfficialRpcLetterProps> = ({
         </div>
 
         {/* Salutation & Body Text */}
-        <div className="relative z-10 space-y-3.5 text-[13px] sm:text-[14px] text-stone-950 font-serif leading-relaxed text-left">
+        <div className="relative z-10 space-y-2 text-[12px] sm:text-[12.5px] text-stone-950 font-serif leading-[1.38] text-left">
           <p>Dear Sir/Madam,</p>
 
           <p>
@@ -453,9 +453,9 @@ export const OfficialRpcLetter: React.FC<OfficialRpcLetterProps> = ({
           </p>
 
           {/* Bullet Point with Scholar Info (Exact format from specimen) */}
-          <div className="py-2 pl-8 sm:pl-14">
-            <p className="font-bold text-stone-950 flex items-baseline gap-3">
-              <span className="text-base select-none">•</span>
+          <div className="py-1 pl-6 sm:pl-10">
+            <p className="font-bold text-stone-950 flex items-baseline gap-2.5">
+              <span className="text-sm select-none">•</span>
               <span>
                 Name of Ph.D. Scholar- {scholarName} ({ordinalText}RPC)
               </span>
@@ -467,41 +467,41 @@ export const OfficialRpcLetter: React.FC<OfficialRpcLetterProps> = ({
             meeting.
           </p>
 
-          <p className="pt-2">Thanking you,</p>
+          <p className="pt-1">Thanking you,</p>
         </div>
 
         {/* Signatory & Dean Block with Authentic deansign.svg Signature (Right Aligned) */}
-        <div className="relative z-10 mt-6 mb-6 flex justify-end">
-          <div className="text-center w-72 flex flex-col items-center font-serif">
+        <div className="relative z-10 mt-2 mb-2 flex justify-end">
+          <div className="text-center w-64 flex flex-col items-center font-serif">
             {/* Authentic Dean Signature Specimen rendered from deansign.svg */}
             {includeSignature || isRecordApproved ? (
-              <div className="flex flex-col items-center justify-end w-full h-20 sm:h-24 mb-1">
+              <div className="flex flex-col items-center justify-end w-full h-14 sm:h-16 mb-0.5">
                 <DeanSignature
-                  className="h-20 sm:h-24 w-auto drop-shadow-2xs"
+                  className="h-14 sm:h-16 w-auto drop-shadow-2xs"
                   color="#141847"
                 />
               </div>
             ) : (
-              <div className="h-20 sm:h-24 mb-1" />
+              <div className="h-14 sm:h-16 mb-0.5" />
             )}
 
-            <div className="font-bold text-[13px] sm:text-[14px] text-stone-950">Dean</div>
-            <div className="font-bold text-[13px] sm:text-[14px] text-stone-950">
+            <div className="font-bold text-[12px] sm:text-[12.5px] text-stone-950 leading-tight">Dean</div>
+            <div className="font-bold text-[12px] sm:text-[12.5px] text-stone-950 leading-tight">
               School of Doctoral Studies and Research
             </div>
           </div>
         </div>
 
         {/* Copy to Section */}
-        <div className="relative z-10 mb-8 text-[13px] sm:text-[14px] font-serif text-stone-950">
-          <p className="font-bold mb-1">Copy to:</p>
+        <div className="relative z-10 mb-2 text-[11.5px] sm:text-[12px] font-serif text-stone-950 leading-tight">
+          <p className="font-bold mb-0.5">Copy to:</p>
           <p className="font-bold pl-3">1.&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;Associate Dean- SDSR</p>
         </div>
 
         {/* Institutional Footer (Separated by horizontal rule) */}
-        <div className="relative z-10 pt-2 border-t-[1.5px] border-stone-800 text-[11px] sm:text-[12px] flex flex-col sm:flex-row justify-between items-start gap-2 font-serif text-[#1c355e]">
+        <div className="relative z-10 pt-1.5 border-t-[1.5px] border-stone-800 text-[10px] sm:text-[10.5px] flex flex-col sm:flex-row justify-between items-start gap-1 font-serif text-[#1c355e] leading-tight">
           <div>
-            <p className="font-bold text-[#15244C] text-[12.5px] sm:text-[13px]">
+            <p className="font-bold text-[#15244C] text-[11px] sm:text-[11.5px]">
               National Forensic Sciences University
             </p>
             <p>School of Doctoral Studies &amp; Research</p>

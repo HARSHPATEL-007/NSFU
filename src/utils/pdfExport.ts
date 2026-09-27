@@ -106,10 +106,15 @@ export async function downloadLetterElementAsPdf(
   const imgWidth = pageWidth;
   const calculatedImgHeight = (canvas.height * pageWidth) / canvas.width;
 
-  // If the letter fits within normal single A4 proportions (e.g. up to 308mm), fit it cleanly on a single fullsize page
-  if (calculatedImgHeight <= 308) {
-    const finalHeight = Math.min(calculatedImgHeight, pageHeight);
-    pdf.addImage(imgData, 'PNG', 0, 0, imgWidth, finalHeight, undefined, 'FAST');
+  // If the letter fits within normal single A4 proportions, fit it cleanly on a single fullsize page
+  if (calculatedImgHeight <= pageHeight) {
+    pdf.addImage(imgData, 'PNG', 0, 0, imgWidth, calculatedImgHeight, undefined, 'FAST');
+  } else if (calculatedImgHeight <= 315) {
+    // If slightly over due to system font metrics, proportionally scale down to fit exactly into A4 297mm height
+    const scale = pageHeight / calculatedImgHeight;
+    const scaledWidth = imgWidth * scale;
+    const offsetX = (pageWidth - scaledWidth) / 2;
+    pdf.addImage(imgData, 'PNG', offsetX, 0, scaledWidth, pageHeight, undefined, 'FAST');
   } else {
     // Multi-page slicing if letter exceeds page bounds
     let remainingHeight = calculatedImgHeight;

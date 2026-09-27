@@ -15,6 +15,9 @@ import {
   parseMultipleExcelFiles,
   aggregateActiveSheets,
   exportMultiSheetExcelWorkbook,
+  getSharedLoadedFiles,
+  getSharedLoadedSheets,
+  setSharedLoadedData,
 } from '../services/excelService';
 import { bulkImportScholarsAndRpc, prepareAndApproveRpcLetter } from '../services/dataService';
 import { OfficialRpcLetter } from './OfficialRpcLetter';
@@ -76,13 +79,28 @@ export const ExcelImportModal: React.FC<ExcelImportModalProps> = ({
 
   // Multi-File & Multi-Sheet State
   const [dragActive, setDragActive] = useState(false);
-  const [loadedFiles, setLoadedFiles] = useState<LoadedExcelFile[]>([]);
-  const [loadedSheets, setLoadedSheets] = useState<LoadedExcelSheet[]>([]);
+  const [loadedFiles, setLoadedFiles] = useState<LoadedExcelFile[]>(() => getSharedLoadedFiles());
+  const [loadedSheets, setLoadedSheets] = useState<LoadedExcelSheet[]>(() => getSharedLoadedSheets());
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [selectedSheetFilter, setSelectedSheetFilter] = useState<string>('ALL');
   const [isParsing, setIsParsing] = useState(false);
   const [parseResult, setParseResult] = useState<ExcelParseResult | null>(null);
   const [parseError, setParseError] = useState<string | null>(null);
+
+  // Keep shared storage updated whenever sheets/files change
+  useEffect(() => {
+    setSharedLoadedData(loadedFiles, loadedSheets);
+  }, [loadedFiles, loadedSheets]);
+
+  // Listen to updates from other components (such as NewRpcModal loading an Excel file)
+  useEffect(() => {
+    const handleSharedUpdate = () => {
+      setLoadedFiles(getSharedLoadedFiles());
+      setLoadedSheets(getSharedLoadedSheets());
+    };
+    window.addEventListener('nfsu-excel-data-updated', handleSharedUpdate);
+    return () => window.removeEventListener('nfsu-excel-data-updated', handleSharedUpdate);
+  }, []);
 
   // Student Matching State
   const [matchedStudents, setMatchedStudents] = useState<StudentMatchItem[]>([]);

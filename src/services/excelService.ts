@@ -1,6 +1,8 @@
 import * as XLSX from 'xlsx';
 import { Scholar, RpcRecord, RpcMember } from '../types';
 import { DEMO_MEMBERS } from '../data/initialDemoData';
+import { db } from '../lib/firebase';
+import { doc, getDoc, setDoc } from 'firebase/firestore';
 
 export interface ParsedScholarRow {
   rowIndex: number;
@@ -1378,5 +1380,256 @@ export function exportMultiSheetExcelWorkbook(
     `NFSU_SDSR_MultiSheet_Doctoral_Register_${new Date().toISOString().split('T')[0]}.xlsx`;
 
   XLSX.writeFile(wb, fileName);
+}
+
+// ==========================================
+// SHARED LOADED EXCEL STATE (CROSS-COMPONENT)
+// ==========================================
+export interface ExcelRosterCandidate {
+  id: string; // unique ID
+  enrollmentNo: string;
+  scholarName: string;
+  school: string;
+  department: string;
+  guideName: string;
+  guideDesignation: string;
+  guideEmail?: string;
+  guideSchool?: string;
+  rpcNumber: number;
+  rpcDate: string;
+  meetingTime: string;
+  meetingMode: 'ONLINE' | 'OFFLINE' | 'HYBRID';
+  venue: string;
+  internalExpertName?: string;
+  externalExpert1Name?: string;
+  externalExpert2Name?: string;
+  notes?: string;
+  sourceSheetName: string;
+  sourceFileName: string;
+  isExistingInDb: boolean;
+  matchedScholarId?: string;
+}
+
+const LOCAL_STORAGE_EXCEL_SHEETS_KEY = 'nfsu_shared_loaded_excel_sheets';
+const LOCAL_STORAGE_EXCEL_FILES_KEY = 'nfsu_shared_loaded_excel_files';
+
+let memorySharedLoadedFiles: LoadedExcelFile[] = [];
+let memorySharedLoadedSheets: LoadedExcelSheet[] = [];
+
+function initSharedExcelMemory() {
+  if (typeof window === 'undefined') return;
+  try {
+    if (memorySharedLoadedSheets.length === 0) {
+      const cachedSheets = localStorage.getItem(LOCAL_STORAGE_EXCEL_SHEETS_KEY);
+      if (cachedSheets) memorySharedLoadedSheets = JSON.parse(cachedSheets);
+    }
+    if (memorySharedLoadedFiles.length === 0) {
+      const cachedFiles = localStorage.getItem(LOCAL_STORAGE_EXCEL_FILES_KEY);
+      if (cachedFiles) memorySharedLoadedFiles = JSON.parse(cachedFiles);
+    }
+  } catch (e) {
+    console.warn('Error reading Excel cache from localStorage:', e);
+  }
+}
+
+export function getSharedLoadedSheets(): LoadedExcelSheet[] {
+  initSharedExcelMemory();
+  return memorySharedLoadedSheets;
+}
+
+export function getSharedLoadedFiles(): LoadedExcelFile[] {
+  initSharedExcelMemory();
+  return memorySharedLoadedFiles;
+}
+
+export function setSharedLoadedData(files: LoadedExcelFile[], sheets: LoadedExcelSheet[]): void {
+  memorySharedLoadedFiles = files;
+  memorySharedLoadedSheets = sheets;
+  if (typeof window !== 'undefined') {
+    try {
+      localStorage.setItem(LOCAL_STORAGE_EXCEL_FILES_KEY, JSON.stringify(files));
+      localStorage.setItem(LOCAL_STORAGE_EXCEL_SHEETS_KEY, JSON.stringify(sheets));
+      window.dispatchEvent(new CustomEvent('nfsu-excel-data-updated', { detail: { files, sheets } }));
+    } catch (e) {
+      console.warn('Error saving Excel data to localStorage:', e);
+    }
+  }
+
+  // Also seamlessly persist loaded Excel rosters to Firestore cloud so every work is saved
+  syncLoadedExcelToFirestore(files, sheets).catch((err) => {
+    console.warn('Could not sync loaded Excel data to Firestore:', err);
+  });
+}
+
+// Sync loaded Excel datasets to Firestore
+export async function syncLoadedExcelToFirestore(
+  files: LoadedExcelFile[] = memorySharedLoadedFiles,
+  sheets: LoadedExcelSheet[] = memorySharedLoadedSheets
+): Promise<void> {
+  try {
+    await setDoc(doc(db, 'portalState', 'loadedExcelData'), {
+      files,
+      sheets,
+      updatedAt: new Date().toISOString(),
+    });
+  } catch (err) {
+    console.warn('Firestore portalState sync warning:', err);
+  }
+}
+
+// Restore loaded Excel datasets from Firestore if not present locally
+export async function loadLoadedExcelFromFirestore(): Promise<boolean> {
+  try {
+    const snap = await getDoc(doc(db, 'portalState', 'loadedExcelData'));
+    if (snap.exists()) {
+      const data = snap.data();
+      if (data && Array.isArray(data.sheets) && data.sheets.length > 0) {
+        if (memorySharedLoadedSheets.length === 0) {
+          memorySharedLoadedFiles = data.files || [];
+          memorySharedLoadedSheets = data.sheets || [];
+          if (typeof window !== 'undefined') {
+            try {
+              localStorage.setItem(LOCAL_STORAGE_EXCEL_FILES_KEY, JSON.stringify(memorySharedLoadedFiles));
+              localStorage.setItem(LOCAL_STORAGE_EXCEL_SHEETS_KEY, JSON.stringify(memorySharedLoadedSheets));
+              window.dispatchEvent(
+                new CustomEvent('nfsu-excel-data-updated', {
+                  detail: { files: memorySharedLoadedFiles, sheets: memorySharedLoadedSheets },
+                })
+              );
+            } catch (e) {}
+          }
+          return true;
+        }
+      }
+    }
+  } catch (err) {
+    console.warn('Firestore loadLoadedExcelFromFirestore warning:', err);
+  }
+  return false;
+}
+
+export function clearSharedLoadedData(): void {
+  memorySharedLoadedFiles = [];
+  memorySharedLoadedSheets = [];
+  if (typeof window !== 'undefined') {
+    try {
+      localStorage.removeItem(LOCAL_STORAGE_EXCEL_FILES_KEY);
+      localStorage.removeItem(LOCAL_STORAGE_EXCEL_SHEETS_KEY);
+      window.dispatchEvent(new CustomEvent('nfsu-excel-data-updated', { detail: { files: [], sheets: [] } }));
+    } catch (e) {}
+  }
+  // Clear from Firestore as well
+  syncLoadedExcelToFirestore([], []).catch(() => {});
+}
+
+export function getLoadedExcelRosterCandidates(existingScholars: Scholar[]): ExcelRosterCandidate[] {
+  const activeSheets = getSharedLoadedSheets().filter((s) => s.isLoaded);
+  if (activeSheets.length === 0) return [];
+
+  const existingByEnroll = new Map<string, Scholar>();
+  const existingByName = new Map<string, Scholar>();
+  existingScholars.forEach((s) => {
+    existingByEnroll.set(s.enrollmentNo.trim().toLowerCase(), s);
+    existingByName.set(
+      s.name.trim().toLowerCase().replace(/^dr\.\s*|^mr\.\s*|^ms\.\s*|^mrs\.\s*/i, ''),
+      s
+    );
+  });
+
+  const candidates: ExcelRosterCandidate[] = [];
+  const seenKeys = new Set<string>();
+
+  activeSheets.forEach((sheet) => {
+    // 1. Process RPC rows
+    sheet.rpcRows.forEach((r, idx) => {
+      const normEnroll = (r.enrollmentNo || '').trim().toLowerCase();
+      const normName = (r.scholarName || '')
+        .trim()
+        .toLowerCase()
+        .replace(/^dr\.\s*|^mr\.\s*|^ms\.\s*|^mrs\.\s*/i, '');
+      const key = `${normEnroll || normName}-rpc-${r.rpcNumber}`;
+      if (seenKeys.has(key)) return;
+      seenKeys.add(key);
+
+      const dbMatch =
+        (normEnroll ? existingByEnroll.get(normEnroll) : undefined) ||
+        (normName ? existingByName.get(normName) : undefined);
+
+      candidates.push({
+        id: `cand-${sheet.id}-${idx}`,
+        enrollmentNo: r.enrollmentNo || dbMatch?.enrollmentNo || '',
+        scholarName: r.scholarName || dbMatch?.name || 'Unknown Scholar',
+        school: dbMatch?.school || 'School of Forensic Science',
+        department: dbMatch?.department || dbMatch?.school || 'Doctoral Studies and Research',
+        guideName: r.guideName || dbMatch?.guideName || 'Prof. Guide',
+        guideDesignation: dbMatch?.guideDesignation || 'Professor',
+        guideEmail: dbMatch?.guideEmail,
+        guideSchool: dbMatch?.guideSchool || dbMatch?.school,
+        rpcNumber: r.rpcNumber || dbMatch?.currentRpcNo || 1,
+        rpcDate: r.rpcDate || new Date().toISOString().split('T')[0],
+        meetingTime: r.meetingTime || '11:30 AM',
+        meetingMode: r.meetingMode || 'ONLINE',
+        venue: r.venue || 'SDSR Board Room / Google Meet',
+        internalExpertName: r.internalExpertName,
+        externalExpert1Name: r.externalExpert1Name,
+        externalExpert2Name: r.externalExpert2Name,
+        notes: r.notes,
+        sourceSheetName: sheet.sheetName,
+        sourceFileName: sheet.fileName,
+        isExistingInDb: !!dbMatch,
+        matchedScholarId: dbMatch?.id,
+      });
+    });
+
+    // 2. Process Scholar rows
+    sheet.scholarRows.forEach((sRow, idx) => {
+      const s = sRow.scholar;
+      const normEnroll = (s.enrollmentNo || '').trim().toLowerCase();
+      const normName = (s.name || '')
+        .trim()
+        .toLowerCase()
+        .replace(/^dr\.\s*|^mr\.\s*|^ms\.\s*|^mrs\.\s*/i, '');
+      const key = `${normEnroll || normName}-rpc-${s.currentRpcNo || 1}`;
+      if (seenKeys.has(key)) return;
+      seenKeys.add(key);
+
+      const dbMatch =
+        (normEnroll ? existingByEnroll.get(normEnroll) : undefined) ||
+        (normName ? existingByName.get(normName) : undefined);
+
+      candidates.push({
+        id: `cand-sch-${sheet.id}-${idx}`,
+        enrollmentNo: s.enrollmentNo,
+        scholarName: s.name,
+        school: s.school,
+        department: s.department || s.school,
+        guideName: s.guideName,
+        guideDesignation: s.guideDesignation || 'Professor',
+        guideEmail: s.guideEmail,
+        guideSchool: s.guideSchool || s.school,
+        rpcNumber: s.currentRpcNo || 1,
+        rpcDate: new Date().toISOString().split('T')[0],
+        meetingTime: '11:30 AM',
+        meetingMode: 'ONLINE',
+        venue: 'SDSR Committee Room / Google Meet',
+        sourceSheetName: sheet.sheetName,
+        sourceFileName: sheet.fileName,
+        isExistingInDb: !!dbMatch,
+        matchedScholarId: dbMatch?.id,
+      });
+    });
+  });
+
+  return candidates;
+}
+
+export async function quickLoadSampleRosterShared(
+  existingScholars: Scholar[]
+): Promise<{ files: LoadedExcelFile[]; sheets: LoadedExcelSheet[]; candidates: ExcelRosterCandidate[] }> {
+  const sampleFile = createSampleRosterExcelFile();
+  const res = await parseMultipleExcelFiles([sampleFile], existingScholars);
+  setSharedLoadedData(res.files, res.sheets);
+  const candidates = getLoadedExcelRosterCandidates(existingScholars);
+  return { files: res.files, sheets: res.sheets, candidates };
 }
 

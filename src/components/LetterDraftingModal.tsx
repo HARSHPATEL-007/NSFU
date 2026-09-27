@@ -1,8 +1,8 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { RpcRecord, OfficialLetterData, UserProfile } from '../types';
 import { OfficialRpcLetter } from './OfficialRpcLetter';
 import { saveDraftLetter, validateForForwarding } from '../services/dataService';
-import { X, Save, Send, Download, Check, AlertCircle, Edit3, Eye, Loader2, Printer, FileDown } from 'lucide-react';
+import { X, Save, Send, Download, Check, AlertCircle, Edit3, Eye, Loader2, Printer, FileDown, CheckCircle2 } from 'lucide-react';
 import { downloadLetterElementAsPdf, generateLetterPdfFilename } from '../utils/pdfExport';
 import { downloadApprovedRpcLetterDocx } from '../utils/docxExport';
 
@@ -66,16 +66,53 @@ export const LetterDraftingModal: React.FC<LetterDraftingModalProps> = ({
   const [isDownloadingDocx, setIsDownloadingDocx] = useState(false);
   const [saveSuccessNotice, setSaveSuccessNotice] = useState(false);
   const [errorMessage, setErrorMessage] = useState('');
+  const [lastAutoSavedAt, setLastAutoSavedAt] = useState<string | null>(null);
+
+  // Save helper to ensure any pending changes are immediately flushed
+  const flushSave = async (dataToSave = formData) => {
+    if (isLocked) return;
+    try {
+      const updated = await saveDraftLetter(record.id, dataToSave, currentUser);
+      onSaveSuccess(updated);
+      setLastAutoSavedAt(
+        new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' })
+      );
+      return updated;
+    } catch (e) {
+      console.warn('Draft flushSave error:', e);
+    }
+  };
+
+  // Auto-Save Effect: Any edit made to the letter fields is automatically saved locally and synced
+  const isInitialMount = useRef(true);
+  useEffect(() => {
+    if (!isOpen || isLocked) return;
+    if (isInitialMount.current) {
+      isInitialMount.current = false;
+      return;
+    }
+
+    const timer = setTimeout(async () => {
+      await flushSave(formData);
+    }, 600);
+
+    return () => clearTimeout(timer);
+  }, [formData, isOpen, isLocked, record.id, currentUser]);
+
+  const handleSafeClose = async () => {
+    await flushSave(formData);
+    onClose();
+  };
 
   // Keyboard shortcut handler for Esc (close) and Ctrl+S / Cmd+S (save draft)
   useEffect(() => {
     if (!isOpen) return;
 
-    const handleKeyDown = (e: KeyboardEvent) => {
+    const handleKeyDown = async (e: KeyboardEvent) => {
       // Esc to close modal
       if (e.key === 'Escape') {
         e.preventDefault();
-        onClose();
+        await handleSafeClose();
         return;
       }
 
@@ -135,6 +172,9 @@ export const LetterDraftingModal: React.FC<LetterDraftingModalProps> = ({
       onSaveSuccess(updated);
       setSaveSuccessNotice(true);
       setTimeout(() => setSaveSuccessNotice(false), 3000);
+      setLastAutoSavedAt(
+        new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' })
+      );
     } catch (err: any) {
       setErrorMessage(err.message || 'Failed to save draft letter.');
     } finally {
@@ -142,7 +182,9 @@ export const LetterDraftingModal: React.FC<LetterDraftingModalProps> = ({
     }
   };
 
-  const handleForwardClick = () => {
+  const handleForwardClick = async () => {
+    // Save draft first so the record has the exact latest form data
+    await flushSave(formData);
     // Validate mandatory fields
     const val = validateForForwarding({ ...record, letterData: formData });
     if (!val.isValid) {
@@ -155,7 +197,7 @@ export const LetterDraftingModal: React.FC<LetterDraftingModalProps> = ({
   return (
     <div
       onClick={(e) => {
-        if (e.target === e.currentTarget) onClose();
+        if (e.target === e.currentTarget) handleSafeClose();
       }}
       className="fixed inset-0 z-50 overflow-y-auto bg-stone-900/60 backdrop-blur-xs flex items-center justify-center p-2 sm:p-4"
     >
@@ -169,6 +211,10 @@ export const LetterDraftingModal: React.FC<LetterDraftingModalProps> = ({
               </h2>
               <span className="text-xs px-2 py-0.5 rounded bg-stone-100 text-stone-700 font-mono">
                 Ref: {formData.refNo}
+              </span>
+              <span className="inline-flex items-center gap-1 text-[11px] font-medium text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded border border-emerald-200">
+                <CheckCircle2 className="w-3 h-3 text-emerald-600" />
+                <span>{lastAutoSavedAt ? `Saved at ${lastAutoSavedAt}` : 'Auto-save active'}</span>
               </span>
             </div>
             <p className="text-xs text-stone-500">
@@ -204,7 +250,7 @@ export const LetterDraftingModal: React.FC<LetterDraftingModalProps> = ({
             </div>
 
             <button
-              onClick={onClose}
+              onClick={handleSafeClose}
               className="inline-flex items-center gap-1 text-stone-400 hover:text-stone-700 p-1.5 rounded transition cursor-pointer"
               aria-label="Close"
               title="Close modal (Esc)"

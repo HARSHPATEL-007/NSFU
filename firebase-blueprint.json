@@ -149,9 +149,23 @@
         "metadata": { "type": "object" }
       },
       "required": ["recipientEmail", "eventType", "rpcRecordId", "scholarId", "status", "createdAt"]
+    },
+    "PortalState": {
+      "title": "PortalState",
+      "description": "Global persisted portal state including loaded Excel files and rosters",
+      "type": "object",
+      "properties": {
+        "files": { "type": "array" },
+        "sheets": { "type": "array" },
+        "updatedAt": { "type": "string" }
+      }
     }
   },
   "firestore": {
+    "/portalState/{stateId}": {
+      "schema": "PortalState",
+      "description": "Persisted shared portal datasets such as loaded Excel rosters and files"
+    },
     "/users/{userId}": {
       "schema": "User",
       "description": "System users with designated roles"

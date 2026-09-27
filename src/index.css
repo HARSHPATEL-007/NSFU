@@ -135,7 +135,7 @@ html.dark body {
     width: 100% !important;
     max-width: 100% !important;
     margin: 0 auto !important;
-    padding: 12mm 16mm !important;
+    padding: 0 !important;
     border: none !important;
     box-shadow: none !important;
     min-height: auto !important;
@@ -145,6 +145,6 @@ html.dark body {
 
   @page {
     size: A4 portrait;
-    margin: 8mm;
+    margin: 8mm 12mm;
   }
 }

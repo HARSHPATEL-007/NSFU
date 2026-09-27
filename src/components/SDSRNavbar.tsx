@@ -1,8 +1,9 @@
-import React from 'react';
+import React, { useState, useEffect } from 'react';
 import { UserProfile, UserRole } from '../types';
-import { Shield, UserCheck, LogOut, Building2, Database } from 'lucide-react';
+import { Shield, UserCheck, LogOut, Building2, Database, CheckCircle2, Save, Loader2 } from 'lucide-react';
 import { ThemeToggle } from './ThemeToggle';
 import { NFSUEmblem } from './NFSULogo';
+import { saveAllPortalWork } from '../services/dataService';
 
 interface SDSRNavbarProps {
   currentUser: UserProfile;
@@ -18,6 +19,33 @@ export const SDSRNavbar: React.FC<SDSRNavbarProps> = ({
   isDbConnected = true,
 }) => {
   const isDean = currentUser.role === 'DEAN_SDSR';
+  const [saveStatus, setSaveStatus] = useState<'saved' | 'saving'>('saved');
+  const [lastSavedText, setLastSavedText] = useState('All work saved');
+
+  useEffect(() => {
+    const handleSaved = (e: any) => {
+      setSaveStatus('saved');
+      setLastSavedText('All work saved');
+    };
+    const handleChanged = () => {
+      setSaveStatus('saved');
+    };
+    window.addEventListener('nfsu-portal-work-saved', handleSaved);
+    window.addEventListener('nfsu-portal-data-changed', handleChanged);
+    return () => {
+      window.removeEventListener('nfsu-portal-work-saved', handleSaved);
+      window.removeEventListener('nfsu-portal-data-changed', handleChanged);
+    };
+  }, []);
+
+  const handleForceSave = async () => {
+    setSaveStatus('saving');
+    await saveAllPortalWork();
+    setTimeout(() => {
+      setSaveStatus('saved');
+      setLastSavedText(`Saved ${new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}`);
+    }, 400);
+  };
 
   return (
     <header className="bg-white border-b border-stone-200 sticky top-0 z-30 shadow-xs print:hidden">
@@ -42,10 +70,28 @@ export const SDSRNavbar: React.FC<SDSRNavbarProps> = ({
                   National Forensic Sciences University
                 </span>
                 <span className="hidden sm:inline-block w-1 h-1 rounded-full bg-stone-300"></span>
-                <span className="hidden sm:inline-flex items-center gap-1 text-[11px] font-medium text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded border border-emerald-200">
-                  <Database className="w-3 h-3 text-emerald-600" />
-                  Firestore Active
-                </span>
+                <button
+                  type="button"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    handleForceSave();
+                  }}
+                  id="navbar-save-status-badge"
+                  title="Click to immediately sync & save every work on portal"
+                  className="hidden sm:inline-flex items-center gap-1 text-[11px] font-medium text-emerald-800 bg-emerald-50 hover:bg-emerald-100 active:bg-emerald-200 px-2 py-0.5 rounded border border-emerald-300 transition cursor-pointer select-none"
+                >
+                  {saveStatus === 'saving' ? (
+                    <>
+                      <Loader2 className="w-3 h-3 text-emerald-600 animate-spin" />
+                      <span>Saving to portal...</span>
+                    </>
+                  ) : (
+                    <>
+                      <CheckCircle2 className="w-3 h-3 text-emerald-600" />
+                      <span>{lastSavedText}</span>
+                    </>
+                  )}
+                </button>
               </div>
               <h1 className="text-sm sm:text-base font-bold text-stone-900 group-hover:text-stone-700 transition leading-tight">
                 SDSR RPC Processing Portal

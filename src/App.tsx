@@ -7,7 +7,10 @@ import {
   getRpcRecordById,
   getAllScholars,
   getScholarRpcHistory,
+  saveAllPortalWork,
 } from './services/dataService';
+import { db } from './lib/firebase';
+import { collection, onSnapshot } from 'firebase/firestore';
 import { SDSRNavbar } from './components/SDSRNavbar';
 import { OfficeDashboard } from './components/OfficeDashboard';
 import { DeanDashboard } from './components/DeanDashboard';
@@ -70,6 +73,55 @@ export default function App() {
 
   useEffect(() => {
     bootApp();
+
+    // Listen to local and cross-tab data update events
+    const handlePortalUpdate = () => {
+      refreshData();
+    };
+    window.addEventListener('nfsu-portal-data-changed', handlePortalUpdate);
+    window.addEventListener('nfsu-portal-work-saved', handlePortalUpdate);
+
+    // Attach real-time cloud Firestore listeners
+    const unsubRpcs = onSnapshot(
+      collection(db, 'rpcRecords'),
+      (snap) => {
+        if (!snap.empty) {
+          const list: RpcRecord[] = [];
+          snap.forEach((d) => {
+            const data = d.data() as RpcRecord;
+            if (data.approvedBy && data.approvedBy.includes('Junare')) {
+              data.approvedBy = 'Dean, SDSR';
+            }
+            list.push(data);
+          });
+          setRecords(list);
+        }
+      },
+      (err) => {
+        console.warn('rpcRecords real-time snapshot notice:', err);
+      }
+    );
+
+    const unsubSchs = onSnapshot(
+      collection(db, 'scholars'),
+      (snap) => {
+        if (!snap.empty) {
+          const list: Scholar[] = [];
+          snap.forEach((d) => list.push(d.data() as Scholar));
+          setScholars(list);
+        }
+      },
+      (err) => {
+        console.warn('scholars real-time snapshot notice:', err);
+      }
+    );
+
+    return () => {
+      window.removeEventListener('nfsu-portal-data-changed', handlePortalUpdate);
+      window.removeEventListener('nfsu-portal-work-saved', handlePortalUpdate);
+      unsubRpcs();
+      unsubSchs();
+    };
   }, []);
 
   const bootApp = async () => {

@@ -16,6 +16,10 @@ import {
   getAuditLogsForRecord,
   getEmailNotificationsForRecord,
   updateRpcRecord,
+  updateScholarRecord,
+  updateRpcMembers,
+  getAllMembers,
+  saveAllPortalWork,
 } from '../services/dataService';
 import {
   ArrowLeft,
@@ -37,6 +41,10 @@ import {
   Mail,
   ShieldCheck,
   Loader2,
+  Save,
+  Phone,
+  MapPin,
+  Sparkles,
 } from 'lucide-react';
 
 interface ScholarWorkspaceProps {
@@ -66,6 +74,28 @@ export const ScholarWorkspace: React.FC<ScholarWorkspaceProps> = ({
   const [auditLogs, setAuditLogs] = useState<AuditLog[]>([]);
   const [emailNotifications, setEmailNotifications] = useState<EmailNotificationEvent[]>([]);
   const [expandedEmailId, setExpandedEmailId] = useState<string | null>(null);
+
+  // Scholar Details editing state
+  const [isEditingScholar, setIsEditingScholar] = useState(false);
+  const [scholarTopic, setScholarTopic] = useState('');
+  const [scholarEmail, setScholarEmail] = useState('');
+  const [scholarPhone, setScholarPhone] = useState('');
+  const [scholarAddress, setScholarAddress] = useState('');
+  const [scholarSaving, setScholarSaving] = useState(false);
+  const [scholarSavedNotice, setScholarSavedNotice] = useState(false);
+
+  // Committee members editing state
+  const [availableMembers, setAvailableMembers] = useState<RpcMember[]>([]);
+  const [isEditingMembers, setIsEditingMembers] = useState(false);
+  const [editGuideName, setEditGuideName] = useState(record.rpcMembers?.guide?.name || '');
+  const [editGuideDesig, setEditGuideDesig] = useState(record.rpcMembers?.guide?.designation || 'Professor');
+  const [editGuideDept, setEditGuideDept] = useState(record.rpcMembers?.guide?.department || record.school);
+  const [editGuideEmail, setEditGuideEmail] = useState(record.rpcMembers?.guide?.email || 'guide@nfsu.ac.in');
+  const [editInternalId, setEditInternalId] = useState(record.rpcMembers?.internalExpert?.id || '');
+  const [editExt1Id, setEditExt1Id] = useState(record.rpcMembers?.externalExpert1?.id || '');
+  const [editExt2Id, setEditExt2Id] = useState(record.rpcMembers?.externalExpert2?.id || '');
+  const [membersSaving, setMembersSaving] = useState(false);
+  const [membersSavedNotice, setMembersSavedNotice] = useState(false);
 
   // Auto-save state
   type AutoSaveState = 'saved' | 'saving' | 'unsaved' | 'error';
@@ -98,7 +128,7 @@ export const ScholarWorkspace: React.FC<ScholarWorkspaceProps> = ({
   const isReturned = record.status === 'RETURNED_FOR_CORRECTION';
   const isOffice = currentUser.role === 'SDSR_OFFICE';
 
-  // Component lifecycle mount tracker
+  // Component lifecycle mount tracker - flushes pending auto-save on unmount
   useEffect(() => {
     isMountedRef.current = true;
     return () => {
@@ -106,6 +136,7 @@ export const ScholarWorkspace: React.FC<ScholarWorkspaceProps> = ({
       if (debounceTimerRef.current) {
         clearTimeout(debounceTimerRef.current);
       }
+      performAutoSave();
     };
   }, []);
 
@@ -116,12 +147,31 @@ export const ScholarWorkspace: React.FC<ScholarWorkspaceProps> = ({
   const loadScholarData = async () => {
     const s = await getScholarById(record.scholarId);
     setScholar(s);
+    if (s) {
+      setScholarTopic(s.researchTopic || '');
+      setScholarEmail(s.contactDetails?.email || '');
+      setScholarPhone(s.contactDetails?.phone || '');
+      setScholarAddress(s.contactDetails?.address || '');
+    }
+    const mems = await getAllMembers();
+    setAvailableMembers(mems);
     const hist = await getScholarRpcHistory(record.scholarId);
     setHistory(hist);
     const logs = await getAuditLogsForRecord(record.id);
     setAuditLogs(logs);
     const notifs = await getEmailNotificationsForRecord(record.id);
     setEmailNotifications(notifs);
+
+    // Sync member edit defaults
+    if (record.rpcMembers) {
+      setEditGuideName(record.rpcMembers.guide?.name || s?.guideName || '');
+      setEditGuideDesig(record.rpcMembers.guide?.designation || s?.guideDesignation || 'Professor');
+      setEditGuideDept(record.rpcMembers.guide?.department || s?.department || record.school);
+      setEditGuideEmail(record.rpcMembers.guide?.email || s?.guideEmail || 'guide@nfsu.ac.in');
+      setEditInternalId(record.rpcMembers.internalExpert?.id || '');
+      setEditExt1Id(record.rpcMembers.externalExpert1?.id || '');
+      setEditExt2Id(record.rpcMembers.externalExpert2?.id || '');
+    }
 
     // Only reset field values if record ID has changed to prevent wiping user input
     if (record.id !== currentRecordIdRef.current) {
@@ -258,6 +308,98 @@ export const ScholarWorkspace: React.FC<ScholarWorkspaceProps> = ({
     await performAutoSave();
   }, [performAutoSave]);
 
+  const handleBackWithSave = async () => {
+    await flushAutoSave();
+    onBackToDashboard();
+  };
+
+  const handleManualSave = async () => {
+    setAutoSaveStatus('saving');
+    await flushAutoSave();
+    await saveAllPortalWork();
+    setAutoSaveStatus('saved');
+    const timeStr = new Date().toLocaleTimeString([], {
+      hour: '2-digit',
+      minute: '2-digit',
+      second: '2-digit',
+    });
+    setLastSavedAt(timeStr);
+  };
+
+  const handleSaveScholar = async () => {
+    if (!scholar) return;
+    setScholarSaving(true);
+    try {
+      const updated = await updateScholarRecord(
+        scholar.id,
+        {
+          researchTopic: scholarTopic,
+          contactDetails: {
+            ...scholar.contactDetails,
+            email: scholarEmail,
+            phone: scholarPhone,
+            address: scholarAddress,
+          },
+        },
+        currentUser,
+        'Scholar Profile Updated',
+        `Updated research topic and contact details for ${scholar.name}`
+      );
+      setScholar(updated);
+      setIsEditingScholar(false);
+      setScholarSavedNotice(true);
+      setTimeout(() => setScholarSavedNotice(false), 3000);
+    } catch (e: any) {
+      console.error('Error saving scholar record:', e);
+    } finally {
+      setScholarSaving(false);
+    }
+  };
+
+  const handleSaveMembers = async () => {
+    setMembersSaving(true);
+    try {
+      const internalMember = availableMembers.find((m) => m.id === editInternalId) || record.rpcMembers?.internalExpert;
+      const ext1Member = availableMembers.find((m) => m.id === editExt1Id) || record.rpcMembers?.externalExpert1;
+      const ext2Member = availableMembers.find((m) => m.id === editExt2Id) || record.rpcMembers?.externalExpert2;
+
+      const guideMember: RpcMember = {
+        id: record.rpcMembers?.guide?.id || `guide-${record.scholarId}`,
+        name: editGuideName || record.rpcMembers?.guide?.name || 'Research Supervisor',
+        designation: editGuideDesig || record.rpcMembers?.guide?.designation || 'Professor',
+        department: editGuideDept || record.rpcMembers?.guide?.department || record.school,
+        schoolOrInstitution: record.rpcMembers?.guide?.schoolOrInstitution || record.school,
+        location: record.rpcMembers?.guide?.location || 'NFSU Gandhinagar',
+        email: editGuideEmail || record.rpcMembers?.guide?.email || 'guide@nfsu.ac.in',
+        memberType: 'GUIDE',
+      };
+
+      if (!internalMember || !ext1Member || !ext2Member) {
+        throw new Error('Please select all committee members.');
+      }
+
+      const updated = await updateRpcMembers(
+        record.id,
+        {
+          guide: guideMember,
+          internalExpert: internalMember,
+          externalExpert1: ext1Member,
+          externalExpert2: ext2Member,
+        },
+        currentUser
+      );
+
+      onRecordUpdated(updated);
+      setIsEditingMembers(false);
+      setMembersSavedNotice(true);
+      setTimeout(() => setMembersSavedNotice(false), 3000);
+    } catch (e: any) {
+      console.error('Error saving committee members:', e);
+    } finally {
+      setMembersSaving(false);
+    }
+  };
+
   // Handle field change with automatic 800ms debounce
   const handleFieldChange = (
     field: 'rpcDate' | 'meetingTime' | 'meetingMode' | 'venue' | 'requestDetails',
@@ -295,7 +437,7 @@ export const ScholarWorkspace: React.FC<ScholarWorkspaceProps> = ({
       {/* Top Breadcrumb / Back Navigation */}
       <div className="flex items-center justify-between border-b border-stone-200 pb-3">
         <button
-          onClick={onBackToDashboard}
+          onClick={handleBackWithSave}
           id="btn-back-to-dashboard"
           type="button"
           className="inline-flex items-center gap-1.5 text-xs font-semibold text-stone-600 hover:text-stone-900 transition"
@@ -434,6 +576,17 @@ export const ScholarWorkspace: React.FC<ScholarWorkspaceProps> = ({
             {/* If New, In Verification, or Returned */}
             {!isApproved && !isPendingDean && isOffice && (
               <>
+                <button
+                  onClick={handleManualSave}
+                  id="btn-manual-save-workspace"
+                  type="button"
+                  title="Immediately save all active work to cloud and local storage"
+                  className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold text-emerald-800 bg-emerald-50 hover:bg-emerald-100 active:bg-emerald-200 rounded border border-emerald-300 transition shadow-2xs cursor-pointer"
+                >
+                  <Save className="w-3.5 h-3.5 text-emerald-700" />
+                  Save Work
+                </button>
+
                 <button
                   onClick={() => {
                     setActiveTab('request');
@@ -919,70 +1072,191 @@ export const ScholarWorkspace: React.FC<ScholarWorkspaceProps> = ({
         {/* Tab 2: Scholar Details (research topic, enrollment date, contact info) */}
         {activeTab === 'scholar' && (
           <div className="bg-white p-6 rounded-lg border border-stone-200 shadow-2xs space-y-6">
-            <div className="border-b border-stone-100 pb-3">
-              <h2 className="text-sm sm:text-base font-bold text-stone-900">
-                Ph.D. Scholar Profile
-              </h2>
-              <p className="text-xs text-stone-500">
-                Permanent institutional registration details on record at SDSR
-              </p>
+            <div className="border-b border-stone-100 pb-3 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+              <div>
+                <h2 className="text-sm sm:text-base font-bold text-stone-900">
+                  Ph.D. Scholar Profile
+                </h2>
+                <p className="text-xs text-stone-500">
+                  Permanent institutional registration details on record at SDSR
+                </p>
+              </div>
+
+              <div className="flex items-center gap-2">
+                {scholarSavedNotice && (
+                  <span className="inline-flex items-center gap-1 text-xs font-semibold text-emerald-800 bg-emerald-50 px-2.5 py-1 rounded border border-emerald-200 animate-fade-in">
+                    <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" />
+                    Scholar Profile Saved!
+                  </span>
+                )}
+                {isOffice && !isApproved && (
+                  <>
+                    {!isEditingScholar ? (
+                      <button
+                        type="button"
+                        onClick={() => setIsEditingScholar(true)}
+                        id="btn-edit-scholar-profile"
+                        className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold text-stone-800 bg-stone-100 hover:bg-stone-200 rounded border border-stone-300 transition cursor-pointer"
+                      >
+                        <Edit3 className="w-3.5 h-3.5 text-stone-600" />
+                        Edit Scholar Details
+                      </button>
+                    ) : (
+                      <div className="flex items-center gap-2">
+                        <button
+                          type="button"
+                          onClick={() => setIsEditingScholar(false)}
+                          className="px-3 py-1.5 text-xs font-medium text-stone-600 hover:text-stone-900 transition"
+                        >
+                          Cancel
+                        </button>
+                        <button
+                          type="button"
+                          onClick={handleSaveScholar}
+                          disabled={scholarSaving}
+                          id="btn-save-scholar-profile"
+                          className="inline-flex items-center gap-1.5 px-3.5 py-1.5 text-xs font-semibold text-white bg-emerald-700 hover:bg-emerald-800 active:bg-emerald-900 rounded shadow-2xs transition cursor-pointer"
+                        >
+                          {scholarSaving ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Save className="w-3.5 h-3.5" />}
+                          Save Scholar Profile
+                        </button>
+                      </div>
+                    )}
+                  </>
+                )}
+              </div>
             </div>
 
             {scholar ? (
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-6 text-xs sm:text-sm">
-                <div className="space-y-3">
-                  <div>
-                    <span className="text-stone-500 block text-xs">Full Name of Scholar</span>
-                    <span className="font-bold text-stone-950 text-base">{scholar.name}</span>
-                  </div>
-
-                  <div>
-                    <span className="text-stone-500 block text-xs">Registration / Enrollment Number</span>
-                    <span className="font-mono font-bold text-stone-900">{scholar.enrollmentNo}</span>
-                  </div>
-
-                  <div>
-                    <span className="text-stone-500 block text-xs">Enrolled School</span>
-                    <span className="font-medium text-stone-800">{scholar.school}</span>
-                  </div>
-
-                  <div>
-                    <span className="text-stone-500 block text-xs">Campus</span>
-                    <span className="font-medium text-stone-800">{scholar.campus}</span>
-                  </div>
-
-                  <div>
-                    <span className="text-stone-500 block text-xs">Date of Ph.D. Registration</span>
-                    <span className="font-medium text-stone-800">{scholar.registrationDate}</span>
-                  </div>
-                </div>
-
-                <div className="space-y-3">
-                  <div>
-                    <span className="text-stone-500 block text-xs">Research Supervisor / Guide</span>
-                    <span className="font-bold text-stone-900">{scholar.guideName}</span>
-                    <span className="text-stone-500 text-xs block">{scholar.guideDesignation}</span>
-                  </div>
-
-                  <div>
-                    <span className="text-stone-500 block text-xs">Approved Ph.D. Research Topic</span>
-                    <p className="font-medium text-stone-900 bg-stone-50 p-2.5 rounded border border-stone-200 leading-relaxed text-xs">
-                      {scholar.researchTopic}
-                    </p>
-                  </div>
-
-                  <div className="pt-2 border-t border-stone-100">
-                    <span className="text-stone-500 block text-xs mb-1">Contact Information</span>
-                    <div className="text-xs text-stone-700 space-y-1">
-                      <div className="flex items-center gap-1.5">
-                        <Mail className="w-3.5 h-3.5 text-stone-400" />
-                        <span>{scholar.contactDetails?.email}</span>
+              <>
+                {!isEditingScholar ? (
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-6 text-xs sm:text-sm">
+                    <div className="space-y-3">
+                      <div>
+                        <span className="text-stone-500 block text-xs">Full Name of Scholar</span>
+                        <span className="font-bold text-stone-950 text-base">{scholar.name}</span>
                       </div>
-                      <div>Phone: {scholar.contactDetails?.phone}</div>
+
+                      <div>
+                        <span className="text-stone-500 block text-xs">Registration / Enrollment Number</span>
+                        <span className="font-mono font-bold text-stone-900">{scholar.enrollmentNo}</span>
+                      </div>
+
+                      <div>
+                        <span className="text-stone-500 block text-xs">Enrolled School</span>
+                        <span className="font-medium text-stone-800">{scholar.school}</span>
+                      </div>
+
+                      <div>
+                        <span className="text-stone-500 block text-xs">Campus</span>
+                        <span className="font-medium text-stone-800">{scholar.campus || 'Gandhinagar Campus'}</span>
+                      </div>
+
+                      <div>
+                        <span className="text-stone-500 block text-xs">Date of Ph.D. Registration</span>
+                        <span className="font-medium text-stone-800">{scholar.registrationDate}</span>
+                      </div>
+                    </div>
+
+                    <div className="space-y-3">
+                      <div>
+                        <span className="text-stone-500 block text-xs">Research Supervisor / Guide</span>
+                        <span className="font-bold text-stone-900">{scholar.guideName}</span>
+                        <span className="text-stone-500 text-xs block">{scholar.guideDesignation}</span>
+                      </div>
+
+                      <div>
+                        <span className="text-stone-500 block text-xs">Approved Ph.D. Research Topic</span>
+                        <p className="font-medium text-stone-900 bg-stone-50 p-2.5 rounded border border-stone-200 leading-relaxed text-xs">
+                          {scholar.researchTopic}
+                        </p>
+                      </div>
+
+                      <div className="pt-2 border-t border-stone-100">
+                        <span className="text-stone-500 block text-xs mb-1">Contact Information</span>
+                        <div className="text-xs text-stone-700 space-y-1">
+                          <div className="flex items-center gap-1.5">
+                            <Mail className="w-3.5 h-3.5 text-stone-400" />
+                            <span>{scholar.contactDetails?.email || '—'}</span>
+                          </div>
+                          <div className="flex items-center gap-1.5">
+                            <Phone className="w-3.5 h-3.5 text-stone-400" />
+                            <span>{scholar.contactDetails?.phone || '—'}</span>
+                          </div>
+                          {scholar.contactDetails?.address && (
+                            <div className="flex items-center gap-1.5">
+                              <MapPin className="w-3.5 h-3.5 text-stone-400" />
+                              <span>{scholar.contactDetails?.address}</span>
+                            </div>
+                          )}
+                        </div>
+                      </div>
                     </div>
                   </div>
-                </div>
-              </div>
+                ) : (
+                  /* Inline Edit Form for Scholar Details */
+                  <div className="space-y-4 text-xs">
+                    <div className="p-3 bg-stone-50 rounded-lg border border-stone-200 text-stone-600">
+                      Edit scholar institutional data. Every change is immediately persisted to cloud Firestore & local storage.
+                    </div>
+
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                      <div className="sm:col-span-2">
+                        <label className="block font-semibold text-stone-700 mb-1">
+                          Approved Ph.D. Research Topic *
+                        </label>
+                        <textarea
+                          value={scholarTopic}
+                          onChange={(e) => setScholarTopic(e.target.value)}
+                          rows={3}
+                          className="w-full p-2.5 border border-stone-300 rounded bg-white text-stone-900 focus:ring-1 focus:ring-stone-900"
+                          placeholder="Approved doctoral research investigation topic..."
+                          required
+                        />
+                      </div>
+
+                      <div>
+                        <label className="block font-semibold text-stone-700 mb-1">
+                          Official Scholar Email Address
+                        </label>
+                        <input
+                          type="email"
+                          value={scholarEmail}
+                          onChange={(e) => setScholarEmail(e.target.value)}
+                          className="w-full p-2.5 border border-stone-300 rounded bg-white text-stone-900 focus:ring-1 focus:ring-stone-900"
+                          placeholder="e.g. scholar@nfsu.ac.in"
+                        />
+                      </div>
+
+                      <div>
+                        <label className="block font-semibold text-stone-700 mb-1">
+                          Contact Phone Number
+                        </label>
+                        <input
+                          type="tel"
+                          value={scholarPhone}
+                          onChange={(e) => setScholarPhone(e.target.value)}
+                          className="w-full p-2.5 border border-stone-300 rounded bg-white text-stone-900 focus:ring-1 focus:ring-stone-900"
+                          placeholder="+91-9876543210"
+                        />
+                      </div>
+
+                      <div className="sm:col-span-2">
+                        <label className="block font-semibold text-stone-700 mb-1">
+                          Correspondence Address
+                        </label>
+                        <input
+                          type="text"
+                          value={scholarAddress}
+                          onChange={(e) => setScholarAddress(e.target.value)}
+                          className="w-full p-2.5 border border-stone-300 rounded bg-white text-stone-900 focus:ring-1 focus:ring-stone-900"
+                          placeholder="NFSU Sector-9, Gandhinagar 382007"
+                        />
+                      </div>
+                    </div>
+                  </div>
+                )}
+              </>
             ) : (
               <div className="text-xs text-stone-500">Loading scholar information...</div>
             )}
@@ -1091,93 +1365,245 @@ export const ScholarWorkspace: React.FC<ScholarWorkspaceProps> = ({
         {/* Tab 4: RPC Members (guide, internal expert, external experts) */}
         {activeTab === 'members' && (
           <div className="bg-white p-6 rounded-lg border border-stone-200 shadow-2xs space-y-6">
-            <div className="border-b border-stone-100 pb-3">
-              <h2 className="text-sm sm:text-base font-bold text-stone-900">
-                Research Progress Committee (RPC) Composition
-              </h2>
-              <p className="text-xs text-stone-500">
-                Approved supervisory and examination committee for RPC {record.rpcNumber}
-              </p>
-            </div>
-
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-xs">
-              {/* Supervisor / Guide */}
-              <div className="p-4 rounded-lg border border-stone-200 bg-stone-50/70 space-y-1">
-                <span className="text-[10px] font-bold uppercase tracking-wider text-stone-500">
-                  1. Research Supervisor / Guide
-                </span>
-                <div className="font-bold text-stone-950 text-sm">
-                  {record.rpcMembers?.guide?.name}
-                </div>
-                <div className="text-stone-700">{record.rpcMembers?.guide?.designation}</div>
-                <div className="text-stone-600">
-                  {record.rpcMembers?.guide?.schoolOrInstitution || record.school}, NFSU
-                </div>
-                <div className="text-stone-500 text-[11px] pt-1">
-                  Email: {record.rpcMembers?.guide?.email || 'guide@nfsu.ac.in'}
-                </div>
+            <div className="border-b border-stone-100 pb-3 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+              <div>
+                <h2 className="text-sm sm:text-base font-bold text-stone-900">
+                  Research Progress Committee (RPC) Composition
+                </h2>
+                <p className="text-xs text-stone-500">
+                  Approved supervisory and examination committee for RPC {record.rpcNumber}
+                </p>
               </div>
 
-              {/* Internal Expert */}
-              <div className="p-4 rounded-lg border border-stone-200 bg-stone-50/70 space-y-1">
-                <span className="text-[10px] font-bold uppercase tracking-wider text-stone-500">
-                  2. Internal Expert Member
-                </span>
-                <div className="font-bold text-stone-950 text-sm">
-                  {record.rpcMembers?.internalExpert?.name}
-                </div>
-                <div className="text-stone-700">
-                  {record.rpcMembers?.internalExpert?.designation}
-                </div>
-                <div className="text-stone-600">
-                  {record.rpcMembers?.internalExpert?.department},{' '}
-                  {record.rpcMembers?.internalExpert?.schoolOrInstitution}
-                </div>
-                <div className="text-stone-500 text-[11px] pt-1">
-                  Campus: {record.rpcMembers?.internalExpert?.location}
-                </div>
-              </div>
-
-              {/* External Expert 1 */}
-              <div className="p-4 rounded-lg border border-stone-200 bg-stone-50/70 space-y-1">
-                <span className="text-[10px] font-bold uppercase tracking-wider text-stone-500">
-                  3. External Expert Member - 1
-                </span>
-                <div className="font-bold text-stone-950 text-sm">
-                  {record.rpcMembers?.externalExpert1?.name}
-                </div>
-                <div className="text-stone-700">
-                  {record.rpcMembers?.externalExpert1?.designation}
-                </div>
-                <div className="text-stone-600">
-                  {record.rpcMembers?.externalExpert1?.department},{' '}
-                  {record.rpcMembers?.externalExpert1?.schoolOrInstitution}
-                </div>
-                <div className="text-stone-500 text-[11px] pt-1">
-                  Location: {record.rpcMembers?.externalExpert1?.location}
-                </div>
-              </div>
-
-              {/* External Expert 2 */}
-              <div className="p-4 rounded-lg border border-stone-200 bg-stone-50/70 space-y-1">
-                <span className="text-[10px] font-bold uppercase tracking-wider text-stone-500">
-                  4. External Expert Member - 2
-                </span>
-                <div className="font-bold text-stone-950 text-sm">
-                  {record.rpcMembers?.externalExpert2?.name}
-                </div>
-                <div className="text-stone-700">
-                  {record.rpcMembers?.externalExpert2?.designation}
-                </div>
-                <div className="text-stone-600">
-                  {record.rpcMembers?.externalExpert2?.department},{' '}
-                  {record.rpcMembers?.externalExpert2?.schoolOrInstitution}
-                </div>
-                <div className="text-stone-500 text-[11px] pt-1">
-                  Location: {record.rpcMembers?.externalExpert2?.location}
-                </div>
+              <div className="flex items-center gap-2">
+                {membersSavedNotice && (
+                  <span className="inline-flex items-center gap-1 text-xs font-semibold text-emerald-800 bg-emerald-50 px-2.5 py-1 rounded border border-emerald-200 animate-fade-in">
+                    <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" />
+                    Committee Members Saved!
+                  </span>
+                )}
+                {isOffice && !isApproved && (
+                  <>
+                    {!isEditingMembers ? (
+                      <button
+                        type="button"
+                        onClick={() => setIsEditingMembers(true)}
+                        id="btn-edit-rpc-members"
+                        className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold text-stone-800 bg-stone-100 hover:bg-stone-200 rounded border border-stone-300 transition cursor-pointer"
+                      >
+                        <Edit3 className="w-3.5 h-3.5 text-stone-600" />
+                        Edit Committee Members
+                      </button>
+                    ) : (
+                      <div className="flex items-center gap-2">
+                        <button
+                          type="button"
+                          onClick={() => setIsEditingMembers(false)}
+                          className="px-3 py-1.5 text-xs font-medium text-stone-600 hover:text-stone-900 transition"
+                        >
+                          Cancel
+                        </button>
+                        <button
+                          type="button"
+                          onClick={handleSaveMembers}
+                          disabled={membersSaving}
+                          id="btn-save-rpc-members"
+                          className="inline-flex items-center gap-1.5 px-3.5 py-1.5 text-xs font-semibold text-white bg-emerald-700 hover:bg-emerald-800 active:bg-emerald-900 rounded shadow-2xs transition cursor-pointer"
+                        >
+                          {membersSaving ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Save className="w-3.5 h-3.5" />}
+                          Save Committee Members
+                        </button>
+                      </div>
+                    )}
+                  </>
+                )}
               </div>
             </div>
+
+            {!isEditingMembers ? (
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-xs">
+                {/* Supervisor / Guide */}
+                <div className="p-4 rounded-lg border border-stone-200 bg-stone-50/70 space-y-1">
+                  <span className="text-[10px] font-bold uppercase tracking-wider text-stone-500">
+                    1. Research Supervisor / Guide
+                  </span>
+                  <div className="font-bold text-stone-950 text-sm">
+                    {record.rpcMembers?.guide?.name}
+                  </div>
+                  <div className="text-stone-700">{record.rpcMembers?.guide?.designation}</div>
+                  <div className="text-stone-600">
+                    {record.rpcMembers?.guide?.schoolOrInstitution || record.school}, NFSU
+                  </div>
+                  <div className="text-stone-500 text-[11px] pt-1">
+                    Email: {record.rpcMembers?.guide?.email || 'guide@nfsu.ac.in'}
+                  </div>
+                </div>
+
+                {/* Internal Expert */}
+                <div className="p-4 rounded-lg border border-stone-200 bg-stone-50/70 space-y-1">
+                  <span className="text-[10px] font-bold uppercase tracking-wider text-stone-500">
+                    2. Internal Expert Member
+                  </span>
+                  <div className="font-bold text-stone-950 text-sm">
+                    {record.rpcMembers?.internalExpert?.name}
+                  </div>
+                  <div className="text-stone-700">
+                    {record.rpcMembers?.internalExpert?.designation}
+                  </div>
+                  <div className="text-stone-600">
+                    {record.rpcMembers?.internalExpert?.department},{' '}
+                    {record.rpcMembers?.internalExpert?.schoolOrInstitution}
+                  </div>
+                  <div className="text-stone-500 text-[11px] pt-1">
+                    Campus: {record.rpcMembers?.internalExpert?.location}
+                  </div>
+                </div>
+
+                {/* External Expert 1 */}
+                <div className="p-4 rounded-lg border border-stone-200 bg-stone-50/70 space-y-1">
+                  <span className="text-[10px] font-bold uppercase tracking-wider text-stone-500">
+                    3. External Expert Member - 1
+                  </span>
+                  <div className="font-bold text-stone-950 text-sm">
+                    {record.rpcMembers?.externalExpert1?.name}
+                  </div>
+                  <div className="text-stone-700">
+                    {record.rpcMembers?.externalExpert1?.designation}
+                  </div>
+                  <div className="text-stone-600">
+                    {record.rpcMembers?.externalExpert1?.department},{' '}
+                    {record.rpcMembers?.externalExpert1?.schoolOrInstitution}
+                  </div>
+                  <div className="text-stone-500 text-[11px] pt-1">
+                    Location: {record.rpcMembers?.externalExpert1?.location}
+                  </div>
+                </div>
+
+                {/* External Expert 2 */}
+                <div className="p-4 rounded-lg border border-stone-200 bg-stone-50/70 space-y-1">
+                  <span className="text-[10px] font-bold uppercase tracking-wider text-stone-500">
+                    4. External Expert Member - 2
+                  </span>
+                  <div className="font-bold text-stone-950 text-sm">
+                    {record.rpcMembers?.externalExpert2?.name}
+                  </div>
+                  <div className="text-stone-700">
+                    {record.rpcMembers?.externalExpert2?.designation}
+                  </div>
+                  <div className="text-stone-600">
+                    {record.rpcMembers?.externalExpert2?.department},{' '}
+                    {record.rpcMembers?.externalExpert2?.schoolOrInstitution}
+                  </div>
+                  <div className="text-stone-500 text-[11px] pt-1">
+                    Location: {record.rpcMembers?.externalExpert2?.location}
+                  </div>
+                </div>
+              </div>
+            ) : (
+              /* Inline Form to Edit RPC Committee Members */
+              <div className="space-y-4 text-xs">
+                <div className="p-3 bg-stone-50 rounded-lg border border-stone-200 text-stone-600">
+                  Update the committee members assigned to this RPC. Saving will update the official letter draft and sync with the database.
+                </div>
+
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  {/* Supervisor */}
+                  <div className="p-4 rounded-lg border border-stone-200 bg-white space-y-3">
+                    <span className="font-bold text-stone-900 block">1. Research Supervisor</span>
+                    <div>
+                      <label className="block text-[11px] text-stone-500 mb-1">Supervisor Full Name</label>
+                      <input
+                        type="text"
+                        value={editGuideName}
+                        onChange={(e) => setEditGuideName(e.target.value)}
+                        className="w-full p-2 border border-stone-300 rounded bg-white text-stone-900"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-[11px] text-stone-500 mb-1">Designation</label>
+                      <input
+                        type="text"
+                        value={editGuideDesig}
+                        onChange={(e) => setEditGuideDesig(e.target.value)}
+                        className="w-full p-2 border border-stone-300 rounded bg-white text-stone-900"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-[11px] text-stone-500 mb-1">Email</label>
+                      <input
+                        type="email"
+                        value={editGuideEmail}
+                        onChange={(e) => setEditGuideEmail(e.target.value)}
+                        className="w-full p-2 border border-stone-300 rounded bg-white text-stone-900"
+                      />
+                    </div>
+                  </div>
+
+                  {/* Internal Expert Dropdown */}
+                  <div className="p-4 rounded-lg border border-stone-200 bg-white space-y-3">
+                    <span className="font-bold text-stone-900 block">2. Internal Expert Member</span>
+                    <div>
+                      <label className="block text-[11px] text-stone-500 mb-1">Select Internal Expert</label>
+                      <select
+                        value={editInternalId}
+                        onChange={(e) => setEditInternalId(e.target.value)}
+                        className="w-full p-2 border border-stone-300 rounded bg-white text-stone-900"
+                      >
+                        {availableMembers
+                          .filter((m) => m.memberType === 'INTERNAL')
+                          .map((m) => (
+                            <option key={m.id} value={m.id}>
+                              {m.name} ({m.designation}, {m.department})
+                            </option>
+                          ))}
+                      </select>
+                    </div>
+                  </div>
+
+                  {/* External Expert 1 Dropdown */}
+                  <div className="p-4 rounded-lg border border-stone-200 bg-white space-y-3">
+                    <span className="font-bold text-stone-900 block">3. External Expert Member - 1</span>
+                    <div>
+                      <label className="block text-[11px] text-stone-500 mb-1">Select External Expert 1</label>
+                      <select
+                        value={editExt1Id}
+                        onChange={(e) => setEditExt1Id(e.target.value)}
+                        className="w-full p-2 border border-stone-300 rounded bg-white text-stone-900"
+                      >
+                        {availableMembers
+                          .filter((m) => m.memberType === 'EXTERNAL_1' || m.memberType === 'EXTERNAL_2')
+                          .map((m) => (
+                            <option key={m.id} value={m.id}>
+                              {m.name} ({m.schoolOrInstitution}, {m.location})
+                            </option>
+                          ))}
+                      </select>
+                    </div>
+                  </div>
+
+                  {/* External Expert 2 Dropdown */}
+                  <div className="p-4 rounded-lg border border-stone-200 bg-white space-y-3">
+                    <span className="font-bold text-stone-900 block">4. External Expert Member - 2</span>
+                    <div>
+                      <label className="block text-[11px] text-stone-500 mb-1">Select External Expert 2</label>
+                      <select
+                        value={editExt2Id}
+                        onChange={(e) => setEditExt2Id(e.target.value)}
+                        className="w-full p-2 border border-stone-300 rounded bg-white text-stone-900"
+                      >
+                        {availableMembers
+                          .filter((m) => m.memberType === 'EXTERNAL_2' || m.memberType === 'EXTERNAL_1')
+                          .map((m) => (
+                            <option key={m.id} value={m.id}>
+                              {m.name} ({m.schoolOrInstitution}, {m.location})
+                            </option>
+                          ))}
+                      </select>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            )}
           </div>
         )}
 

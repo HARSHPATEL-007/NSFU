@@ -8,9 +8,9 @@ import {
   WidthType,
   BorderStyle,
   AlignmentType,
+  VerticalAlign,
   ImageRun,
   Packer,
-  HeadingLevel,
 } from 'docx';
 import { OfficialLetterData, RpcRecord } from '../types';
 import { triggerFileDownload } from './pdfExport';
@@ -32,7 +32,9 @@ export function generateLetterDocxFilename(
 }
 
 /**
- * Helper to convert an image or SVG URL to PNG byte array in browser
+ * Reliably loads an image as byte array for DOCX embedding.
+ * Directly fetches PNG files as binary buffer (fast, crisp, 100% reliable in browsers & iframes).
+ * Falls back to Image/Canvas rasterization if needed.
  */
 export async function fetchImageAsPngBytes(
   url: string,
@@ -43,19 +45,34 @@ export async function fetchImageAsPngBytes(
     return null;
   }
 
+  // 1. Direct binary fetch for PNG files (fast, lossless, zero canvas taint)
+  if (url.toLowerCase().endsWith('.png')) {
+    try {
+      const resp = await fetch(url);
+      if (resp.ok) {
+        const buf = await resp.arrayBuffer();
+        if (buf && buf.byteLength > 0) {
+          return new Uint8Array(buf);
+        }
+      }
+    } catch (e) {
+      console.warn(`Direct fetch of ${url} failed, trying fallback:`, e);
+    }
+  }
+
+  // 2. Fallback to Image and Canvas rendering (for SVG or other formats)
   return new Promise((resolve) => {
     try {
       const img = new Image();
       img.crossOrigin = 'anonymous';
+
       img.onload = () => {
         try {
           const canvas = document.createElement('canvas');
-          canvas.width = targetWidth * 2; // 2x DPI for sharp high-res rendering
+          canvas.width = targetWidth * 2;
           canvas.height = targetHeight * 2;
           const ctx = canvas.getContext('2d');
-          if (!ctx) {
-            return resolve(null);
-          }
+          if (!ctx) return resolve(null);
           ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
           canvas.toBlob((blob) => {
             if (!blob) return resolve(null);
@@ -68,6 +85,7 @@ export async function fetchImageAsPngBytes(
           resolve(null);
         }
       };
+
       img.onerror = () => resolve(null);
       img.src = url;
     } catch {
@@ -78,7 +96,7 @@ export async function fetchImageAsPngBytes(
 
 /**
  * Generates and downloads an authentic, beautifully formatted Microsoft Word (.docx) document
- * of the official NFSU SDSR RPC Approval Letter.
+ * of the official NFSU SDSR RPC Approval Letter that exactly matches the on-screen preview.
  */
 export async function downloadApprovedRpcLetterDocx(
   record: RpcRecord,
@@ -118,11 +136,20 @@ export async function downloadApprovedRpcLetterDocx(
 
   const isApproved = isApprovedOverride ?? (record.status === 'APPROVED');
 
-  // Attempt to load authentic images for DOCX embedding
+  // Load authentic high-resolution PNG assets for DOCX embedding
+  // Uses direct 300-DPI PNGs with fallback to SVGs
   const [mhaLogoBytes, nfsuLogoBytes, deanSignBytes] = await Promise.all([
-    fetchImageAsPngBytes('/Ministry_of_Home_Affairs_India.svg', 160, 60),
-    fetchImageAsPngBytes('/nfsu-emblem.svg', 80, 100),
-    isApproved ? fetchImageAsPngBytes('/deansign.svg', 220, 85) : Promise.resolve(null),
+    fetchImageAsPngBytes('/Ministry_of_Home_Affairs_India.png', 140, 55).then(
+      (b) => b || fetchImageAsPngBytes('/Ministry_of_Home_Affairs_India.svg', 140, 55)
+    ),
+    fetchImageAsPngBytes('/nfsu-emblem.png', 65, 80).then(
+      (b) => b || fetchImageAsPngBytes('/nfsu-emblem.svg', 65, 80)
+    ),
+    isApproved
+      ? fetchImageAsPngBytes('/deansign.png', 180, 65).then(
+          (b) => b || fetchImageAsPngBytes('/deansign.svg', 180, 65)
+        )
+      : Promise.resolve(null),
   ]);
 
   const cleanOrdinal = (ord: string) => {
@@ -155,15 +182,26 @@ export async function downloadApprovedRpcLetterDocx(
 
   // ==========================================
   // 1. Header Table (MHA Logo, Titles, NFSU Crest)
+  // Symmetrically balanced so the University Titles are exactly in the center of the page
+  // and equidistant between the two symbols:
+  // Printable width on A4 with 720 dxa (0.5 in) margins is 10466 dxa (11906 - 1440)
+  // Left symbol cell: 1600 dxa (MHA Emblem of India)
+  // Right symbol cell: 1600 dxa (NFSU Official Crest)
+  // Center titles cell: 7266 dxa (10466 - 1600 - 1600 = 7266 dxa)
+  // Center of Center cell: 1600 + (7266 / 2) = 5233 dxa (exactly 10466 / 2, the true page center!)
   // ==========================================
+  const sideWidthDxa = 1600;
+  const centerWidthDxa = 7266;
+
   const headerLeftChildren: Paragraph[] = [];
   if (mhaLogoBytes) {
     headerLeftChildren.push(
       new Paragraph({
+        alignment: AlignmentType.LEFT,
         children: [
           new ImageRun({
             data: mhaLogoBytes,
-            transformation: { width: 140, height: 55 },
+            transformation: { width: 75, height: 29.5 },
             type: 'png',
           }),
         ],
@@ -172,9 +210,10 @@ export async function downloadApprovedRpcLetterDocx(
   } else {
     headerLeftChildren.push(
       new Paragraph({
+        alignment: AlignmentType.LEFT,
         children: [
-          new TextRun({ text: 'गृह मंत्रालय\n', bold: true, size: 18, font: 'Times New Roman' }),
-          new TextRun({ text: 'MINISTRY OF HOME AFFAIRS', bold: true, size: 16, font: 'Times New Roman' }),
+          new TextRun({ text: 'गृह मंत्रालय', bold: true, size: 16, font: 'Times New Roman' }),
+          new TextRun({ text: 'MINISTRY OF HOME AFFAIRS', break: 1, bold: true, size: 14, font: 'Times New Roman' }),
         ],
       })
     );
@@ -183,12 +222,12 @@ export async function downloadApprovedRpcLetterDocx(
   const headerCenterChildren: Paragraph[] = [
     new Paragraph({
       alignment: AlignmentType.CENTER,
-      spacing: { after: 40 },
+      spacing: { after: 8 },
       children: [
         new TextRun({
           text: 'राष्ट्रीय न्यायालयिक विज्ञान विश्वविद्यालय',
           bold: true,
-          size: 26,
+          size: 23,
           color: '15244C',
           font: 'Times New Roman',
         }),
@@ -196,12 +235,12 @@ export async function downloadApprovedRpcLetterDocx(
     }),
     new Paragraph({
       alignment: AlignmentType.CENTER,
-      spacing: { after: 40 },
+      spacing: { after: 10 },
       children: [
         new TextRun({
           text: '(राष्ट्रीय महत्त्व का संस्थान, गृह मंत्रालय, भारत सरकार)',
           bold: true,
-          size: 19,
+          size: 16.5,
           color: '1C1917',
           font: 'Times New Roman',
         }),
@@ -209,12 +248,12 @@ export async function downloadApprovedRpcLetterDocx(
     }),
     new Paragraph({
       alignment: AlignmentType.CENTER,
-      spacing: { after: 40 },
+      spacing: { after: 8 },
       children: [
         new TextRun({
           text: 'National Forensic Sciences University',
           bold: true,
-          size: 26,
+          size: 23,
           color: '15244C',
           font: 'Times New Roman',
         }),
@@ -222,11 +261,11 @@ export async function downloadApprovedRpcLetterDocx(
     }),
     new Paragraph({
       alignment: AlignmentType.CENTER,
-      spacing: { after: 60 },
+      spacing: { after: 16 },
       children: [
         new TextRun({
           text: '(An Institution of National Importance under Ministry of Home Affairs, Government of India)',
-          size: 18,
+          size: 15,
           color: '44403C',
           font: 'Times New Roman',
         }),
@@ -242,7 +281,7 @@ export async function downloadApprovedRpcLetterDocx(
         children: [
           new ImageRun({
             data: nfsuLogoBytes,
-            transformation: { width: 65, height: 80 },
+            transformation: { width: 42.5, height: 52 },
             type: 'png',
           }),
         ],
@@ -253,17 +292,19 @@ export async function downloadApprovedRpcLetterDocx(
       new Paragraph({
         alignment: AlignmentType.RIGHT,
         children: [
-          new TextRun({ text: 'NFSU Crest', bold: true, size: 18, font: 'Times New Roman' }),
+          new TextRun({ text: 'NFSU Crest', bold: true, size: 16, font: 'Times New Roman' }),
         ],
       })
     );
   }
 
   const headerTable = new Table({
-    width: { size: 100, type: WidthType.PERCENTAGE },
+    width: { size: 10466, type: WidthType.DXA },
+    columnWidths: [sideWidthDxa, centerWidthDxa, sideWidthDxa],
+    alignment: AlignmentType.CENTER,
     borders: {
       top: { style: BorderStyle.NONE },
-      bottom: { style: BorderStyle.SINGLE, size: 16, color: '1C1917' },
+      bottom: { style: BorderStyle.SINGLE, size: 12, color: '1C1917' },
       left: { style: BorderStyle.NONE },
       right: { style: BorderStyle.NONE },
       insideHorizontal: { style: BorderStyle.NONE },
@@ -273,18 +314,21 @@ export async function downloadApprovedRpcLetterDocx(
       new TableRow({
         children: [
           new TableCell({
-            width: { size: 24, type: WidthType.PERCENTAGE },
-            margins: { bottom: 120 },
+            width: { size: sideWidthDxa, type: WidthType.DXA },
+            verticalAlign: VerticalAlign.CENTER,
+            margins: { bottom: 40, top: 20 },
             children: headerLeftChildren,
           }),
           new TableCell({
-            width: { size: 62, type: WidthType.PERCENTAGE },
-            margins: { bottom: 120 },
+            width: { size: centerWidthDxa, type: WidthType.DXA },
+            verticalAlign: VerticalAlign.CENTER,
+            margins: { bottom: 40, top: 20, left: 30, right: 30 },
             children: headerCenterChildren,
           }),
           new TableCell({
-            width: { size: 14, type: WidthType.PERCENTAGE },
-            margins: { bottom: 120 },
+            width: { size: sideWidthDxa, type: WidthType.DXA },
+            verticalAlign: VerticalAlign.CENTER,
+            margins: { bottom: 40, top: 20 },
             children: headerRightChildren,
           }),
         ],
@@ -295,10 +339,12 @@ export async function downloadApprovedRpcLetterDocx(
   docChildren.push(headerTable);
 
   // ==========================================
-  // 2. Reference & Date Line
+  // 2. Reference & Date Line (Matches Preview)
   // ==========================================
   const refDateTable = new Table({
-    width: { size: 100, type: WidthType.PERCENTAGE },
+    width: { size: 10466, type: WidthType.DXA },
+    columnWidths: [6666, 3800],
+    alignment: AlignmentType.CENTER,
     borders: {
       top: { style: BorderStyle.NONE },
       bottom: { style: BorderStyle.NONE },
@@ -311,26 +357,26 @@ export async function downloadApprovedRpcLetterDocx(
       new TableRow({
         children: [
           new TableCell({
-            width: { size: 65, type: WidthType.PERCENTAGE },
-            margins: { top: 180, bottom: 180 },
+            width: { size: 6666, type: WidthType.DXA },
+            margins: { top: 70, bottom: 70 },
             children: [
               new Paragraph({
                 children: [
-                  new TextRun({ text: 'Ref: No: ', bold: true, size: 22, font: 'Times New Roman' }),
-                  new TextRun({ text: formattedRefNo, bold: true, size: 22, font: 'Times New Roman' }),
+                  new TextRun({ text: 'Ref: No: ', bold: true, size: 20, font: 'Times New Roman' }),
+                  new TextRun({ text: formattedRefNo, bold: true, size: 20, font: 'Times New Roman' }),
                 ],
               }),
             ],
           }),
           new TableCell({
-            width: { size: 35, type: WidthType.PERCENTAGE },
-            margins: { top: 180, bottom: 180 },
+            width: { size: 3800, type: WidthType.DXA },
+            margins: { top: 70, bottom: 70 },
             children: [
               new Paragraph({
                 alignment: AlignmentType.RIGHT,
                 children: [
-                  new TextRun({ text: 'Date: ', bold: true, size: 22, font: 'Times New Roman' }),
-                  new TextRun({ text: letterData.date || '10/06/2025', bold: true, size: 22, font: 'Times New Roman' }),
+                  new TextRun({ text: 'Date: ', bold: true, size: 20, font: 'Times New Roman' }),
+                  new TextRun({ text: letterData.date || '10/06/2025', bold: true, size: 20, font: 'Times New Roman' }),
                 ],
               }),
             ],
@@ -343,24 +389,24 @@ export async function downloadApprovedRpcLetterDocx(
   docChildren.push(refDateTable);
 
   // ==========================================
-  // 3. Addressees ("To,++")
+  // 3. Addressees ("To,++") - Exactly matches numbered list layout in Preview
   // ==========================================
   docChildren.push(
     new Paragraph({
-      spacing: { before: 100, after: 80 },
-      children: [new TextRun({ text: 'To,++', bold: true, size: 22, font: 'Times New Roman' })],
+      spacing: { before: 40, after: 25 },
+      children: [new TextRun({ text: 'To,++', bold: true, size: 20, font: 'Times New Roman' })],
     })
   );
 
   // Member 1: Dean
   docChildren.push(
     new Paragraph({
-      spacing: { after: 60 },
-      indent: { left: 400 },
+      spacing: { after: 25 },
+      indent: { left: 450, hanging: 240 },
       children: [
-        new TextRun({ text: '1.\tDean\n\t', bold: true, size: 22, font: 'Times New Roman' }),
-        new TextRun({ text: `${schoolName}\n\t`, bold: true, size: 22, font: 'Times New Roman' }),
-        new TextRun({ text: `NFSU, ${letterData.schoolCampus || 'Gandhinagar'}`, bold: true, size: 22, font: 'Times New Roman' }),
+        new TextRun({ text: '1.\tDean', bold: true, size: 20, font: 'Times New Roman' }),
+        new TextRun({ text: schoolName, break: 1, bold: true, size: 20, font: 'Times New Roman' }),
+        new TextRun({ text: `NFSU, ${letterData.schoolCampus || 'Gandhinagar'}`, break: 1, bold: true, size: 20, font: 'Times New Roman' }),
       ],
     })
   );
@@ -368,28 +414,44 @@ export async function downloadApprovedRpcLetterDocx(
   // Member 2: Guide
   docChildren.push(
     new Paragraph({
-      spacing: { after: 60 },
-      indent: { left: 400 },
+      spacing: { after: 25 },
+      indent: { left: 450, hanging: 240 },
       children: [
-        new TextRun({ text: `2.\t${guideName}\n\t`, bold: true, size: 22, font: 'Times New Roman' }),
-        new TextRun({ text: `${guideDesignation}\n\t`, bold: true, size: 22, font: 'Times New Roman' }),
-        new TextRun({ text: 'NFSU', bold: true, size: 22, font: 'Times New Roman' }),
+        new TextRun({ text: `2.\t${guideName}`, bold: true, size: 20, font: 'Times New Roman' }),
+        new TextRun({ text: guideDesignation, break: 1, bold: true, size: 20, font: 'Times New Roman' }),
+        new TextRun({ text: 'NFSU', break: 1, bold: true, size: 20, font: 'Times New Roman' }),
       ],
     })
   );
 
   // Member 3: Internal Expert
+  const internalExpertCampusStr = letterData.internalExpertCampus
+    ? `, ${letterData.internalExpertCampus.replace(/^NFSU,\s*/i, '')}`
+    : ', Gandhinagar';
+
   docChildren.push(
     new Paragraph({
-      spacing: { after: 60 },
-      indent: { left: 400 },
+      spacing: { after: 25 },
+      indent: { left: 450, hanging: 240 },
       children: [
-        new TextRun({ text: `3.\t${letterData.internalExpertName || 'Dr. Bhoomika Patel'} (Internal Expert Member).\n\t`, bold: true, size: 22, font: 'Times New Roman' }),
-        new TextRun({ text: `${letterData.internalExpertDesignation || 'Dean (I/C), SPH'}\n\t`, bold: true, size: 22, font: 'Times New Roman' }),
         new TextRun({
-          text: `${letterData.internalExpertDept ? `${letterData.internalExpertDept}, ` : ''}NFSU, ${letterData.internalExpertCampus || 'Gandhinagar'}`,
+          text: `3.\t${letterData.internalExpertName || 'Dr. Bhoomika Patel'} (Internal Expert Member).`,
           bold: true,
-          size: 22,
+          size: 20,
+          font: 'Times New Roman',
+        }),
+        new TextRun({
+          text: letterData.internalExpertDesignation || 'Dean (I/C), SPH',
+          break: 1,
+          bold: true,
+          size: 20,
+          font: 'Times New Roman',
+        }),
+        new TextRun({
+          text: `${letterData.internalExpertDept ? `${letterData.internalExpertDept}, ` : ''}NFSU${internalExpertCampusStr}`,
+          break: 1,
+          bold: true,
+          size: 20,
           font: 'Times New Roman',
         }),
       ],
@@ -399,32 +461,99 @@ export async function downloadApprovedRpcLetterDocx(
   // Member 4: External Expert 1
   docChildren.push(
     new Paragraph({
-      spacing: { after: 60 },
-      indent: { left: 400 },
+      spacing: { after: 25 },
+      indent: { left: 450, hanging: 240 },
       children: [
-        new TextRun({ text: `4.\t${letterData.externalExpert1Name || 'Dr. Dhiraj Bhatia'} (External Expert Member)\n\t`, bold: true, size: 22, font: 'Times New Roman' }),
-        new TextRun({ text: `${letterData.externalExpert1Designation || 'Associate Professor & INYAS-INSA Member'}\n\t`, bold: true, size: 22, font: 'Times New Roman' }),
-        new TextRun({ text: `${letterData.externalExpert1Dept || 'Department of Biological Science and Engineering'}\n\t`, bold: true, size: 22, font: 'Times New Roman' }),
-        new TextRun({ text: `${letterData.externalExpert1Inst || 'Indian Institute of Technology Gandhinagar'}\n\t`, bold: true, size: 22, font: 'Times New Roman' }),
-        new TextRun({ text: letterData.externalExpert1City || 'Gujarat', bold: true, size: 22, font: 'Times New Roman' }),
+        new TextRun({
+          text: `4.\t${letterData.externalExpert1Name || 'Dr. Dhiraj Bhatia'} (External Expert Member)`,
+          bold: true,
+          size: 20,
+          font: 'Times New Roman',
+        }),
+        new TextRun({
+          text: letterData.externalExpert1Designation || 'Associate Professor & INYAS-INSA Member',
+          break: 1,
+          bold: true,
+          size: 20,
+          font: 'Times New Roman',
+        }),
+        new TextRun({
+          text: letterData.externalExpert1Dept || 'Department of Biological Science and Engineering',
+          break: 1,
+          bold: true,
+          size: 20,
+          font: 'Times New Roman',
+        }),
+        new TextRun({
+          text: letterData.externalExpert1Inst || 'Indian Institute of Technology Gandhinagar',
+          break: 1,
+          bold: true,
+          size: 20,
+          font: 'Times New Roman',
+        }),
+        new TextRun({
+          text: letterData.externalExpert1City || 'Gujarat',
+          break: 1,
+          bold: true,
+          size: 20,
+          font: 'Times New Roman',
+        }),
       ],
     })
   );
 
   // Member 5: External Expert 2
+  const member5Runs = [
+    new TextRun({
+      text: `5.\t${letterData.externalExpert2Name || 'Dr. Prakash Jha'} (External Expert Member).`,
+      bold: true,
+      size: 20,
+      font: 'Times New Roman',
+    }),
+    new TextRun({
+      text: letterData.externalExpert2Designation || 'Professor & Dean',
+      break: 1,
+      bold: true,
+      size: 20,
+      font: 'Times New Roman',
+    }),
+    new TextRun({
+      text: letterData.externalExpert2Dept || 'School of Applied Material Science',
+      break: 1,
+      bold: true,
+      size: 20,
+      font: 'Times New Roman',
+    }),
+    new TextRun({
+      text: letterData.externalExpert2Inst || 'Central University of Gujarat',
+      break: 1,
+      bold: true,
+      size: 20,
+      font: 'Times New Roman',
+    }),
+  ];
+
+  if (
+    letterData.externalExpert2City &&
+    letterData.externalExpert2City !== 'Gandhinagar' &&
+    letterData.externalExpert2City !== 'Gujarat'
+  ) {
+    member5Runs.push(
+      new TextRun({
+        text: letterData.externalExpert2City,
+        break: 1,
+        bold: true,
+        size: 20,
+        font: 'Times New Roman',
+      })
+    );
+  }
+
   docChildren.push(
     new Paragraph({
-      spacing: { after: 140 },
-      indent: { left: 400 },
-      children: [
-        new TextRun({ text: `5.\t${letterData.externalExpert2Name || 'Dr. Prakash Jha'} (External Expert Member).\n\t`, bold: true, size: 22, font: 'Times New Roman' }),
-        new TextRun({ text: `${letterData.externalExpert2Designation || 'Professor & Dean'}\n\t`, bold: true, size: 22, font: 'Times New Roman' }),
-        new TextRun({ text: `${letterData.externalExpert2Dept || 'School of Applied Material Science'}\n\t`, bold: true, size: 22, font: 'Times New Roman' }),
-        new TextRun({ text: `${letterData.externalExpert2Inst || 'Central University of Gujarat'}`, bold: true, size: 22, font: 'Times New Roman' }),
-        ...(letterData.externalExpert2City && letterData.externalExpert2City !== 'Gandhinagar' && letterData.externalExpert2City !== 'Gujarat'
-          ? [new TextRun({ text: `\n\t${letterData.externalExpert2City}`, bold: true, size: 22, font: 'Times New Roman' })]
-          : []),
-      ],
+      spacing: { after: 40 },
+      indent: { left: 450, hanging: 240 },
+      children: member5Runs,
     })
   );
 
@@ -437,10 +566,10 @@ export async function downloadApprovedRpcLetterDocx(
 
   docChildren.push(
     new Paragraph({
-      spacing: { before: 100, after: 120 },
+      spacing: { before: 40, after: 40 },
       children: [
-        new TextRun({ text: 'Subject: ', bold: true, size: 22, font: 'Times New Roman' }),
-        new TextRun({ text: subjectText, bold: true, size: 22, font: 'Times New Roman' }),
+        new TextRun({ text: 'Subject: ', bold: true, size: 20, font: 'Times New Roman' }),
+        new TextRun({ text: subjectText, bold: true, size: 20, font: 'Times New Roman' }),
       ],
     })
   );
@@ -450,44 +579,44 @@ export async function downloadApprovedRpcLetterDocx(
   // ==========================================
   docChildren.push(
     new Paragraph({
-      spacing: { after: 100 },
-      children: [new TextRun({ text: 'Dear Sir/Madam,', size: 22, font: 'Times New Roman' })],
+      spacing: { after: 30 },
+      children: [new TextRun({ text: 'Dear Sir/Madam,', size: 20, font: 'Times New Roman' })],
     })
   );
 
   docChildren.push(
     new Paragraph({
-      spacing: { after: 100 },
+      spacing: { after: 30 },
       children: [
-        new TextRun({ text: 'The meeting of ', size: 22, font: 'Times New Roman' }),
-        new TextRun({ text: 'Research Progress Committee (RPC)', bold: true, size: 22, font: 'Times New Roman' }),
-        new TextRun({ text: ' for undernoted Ph.D. ', size: 22, font: 'Times New Roman' }),
-        new TextRun({ text: schoolName, bold: true, size: 22, font: 'Times New Roman' }),
-        new TextRun({ text: ' NFSU is scheduled on ', size: 22, font: 'Times New Roman' }),
-        new TextRun({ text: `${meetingDate} from ${meetingTime}`, bold: true, size: 22, font: 'Times New Roman' }),
-        new TextRun({ text: ' onwards through ', size: 22, font: 'Times New Roman' }),
-        new TextRun({ text: rawMode, bold: true, size: 22, font: 'Times New Roman' }),
-        new TextRun({ text: ' mode', size: 22, font: 'Times New Roman' }),
+        new TextRun({ text: 'The meeting of ', size: 20, font: 'Times New Roman' }),
+        new TextRun({ text: 'Research Progress Committee (RPC)', bold: true, size: 20, font: 'Times New Roman' }),
+        new TextRun({ text: ' for undernoted Ph.D. ', size: 20, font: 'Times New Roman' }),
+        new TextRun({ text: schoolName, bold: true, size: 20, font: 'Times New Roman' }),
+        new TextRun({ text: ' NFSU is scheduled on ', size: 20, font: 'Times New Roman' }),
+        new TextRun({ text: `${meetingDate} from ${meetingTime}`, bold: true, size: 20, font: 'Times New Roman' }),
+        new TextRun({ text: ' onwards through ', size: 20, font: 'Times New Roman' }),
+        new TextRun({ text: rawMode, bold: true, size: 20, font: 'Times New Roman' }),
+        new TextRun({ text: ' mode', size: 20, font: 'Times New Roman' }),
         new TextRun({
           text: letterData.meetingVenue && rawMode.toLowerCase() !== 'online' ? ` at ${letterData.meetingVenue}.` : '.',
-          size: 22,
+          size: 20,
           font: 'Times New Roman',
         }),
       ],
     })
   );
 
-  // Bullet Point: Scholar Info
+  // Bullet Point: Scholar Info (Indented with bold bullet)
   docChildren.push(
     new Paragraph({
-      spacing: { before: 80, after: 100 },
-      indent: { left: 720 },
+      spacing: { before: 20, after: 30 },
+      indent: { left: 450 },
       children: [
-        new TextRun({ text: '•  ', bold: true, size: 24, font: 'Times New Roman' }),
+        new TextRun({ text: '•  ', bold: true, size: 21, font: 'Times New Roman' }),
         new TextRun({
           text: `Name of Ph.D. Scholar- ${scholarName} (${ordinalText}RPC)`,
           bold: true,
-          size: 22,
+          size: 20,
           font: 'Times New Roman',
         }),
       ],
@@ -496,11 +625,11 @@ export async function downloadApprovedRpcLetterDocx(
 
   docChildren.push(
     new Paragraph({
-      spacing: { after: 80 },
+      spacing: { after: 25 },
       children: [
         new TextRun({
           text: 'Your presence and valuable suggestions are highly appreciated. Kindly make it convenient to attend the meeting.',
-          size: 22,
+          size: 20,
           font: 'Times New Roman',
         }),
       ],
@@ -509,8 +638,8 @@ export async function downloadApprovedRpcLetterDocx(
 
   docChildren.push(
     new Paragraph({
-      spacing: { after: 140 },
-      children: [new TextRun({ text: 'Thanking you,', size: 22, font: 'Times New Roman' })],
+      spacing: { after: 30 },
+      children: [new TextRun({ text: 'Thanking you,', size: 20, font: 'Times New Roman' })],
     })
   );
 
@@ -526,7 +655,7 @@ export async function downloadApprovedRpcLetterDocx(
         children: [
           new ImageRun({
             data: deanSignBytes,
-            transformation: { width: 140, height: 50 },
+            transformation: { width: 120, height: 42 },
             type: 'png',
           }),
         ],
@@ -536,12 +665,12 @@ export async function downloadApprovedRpcLetterDocx(
     signBlockChildren.push(
       new Paragraph({
         alignment: AlignmentType.CENTER,
-        spacing: { before: 400, after: 80 },
+        spacing: { before: 140, after: 20 },
         children: [
           new TextRun({
             text: isApproved ? 'Approved by Dean, SDSR' : '',
             italics: true,
-            size: 18,
+            size: 17,
             color: '666666',
             font: 'Times New Roman',
           }),
@@ -554,14 +683,16 @@ export async function downloadApprovedRpcLetterDocx(
     new Paragraph({
       alignment: AlignmentType.CENTER,
       children: [
-        new TextRun({ text: 'Dean\n', bold: true, size: 22, font: 'Times New Roman' }),
-        new TextRun({ text: 'School of Doctoral Studies and Research', bold: true, size: 22, font: 'Times New Roman' }),
+        new TextRun({ text: 'Dean', bold: true, size: 20, font: 'Times New Roman' }),
+        new TextRun({ text: 'School of Doctoral Studies and Research', break: 1, bold: true, size: 20, font: 'Times New Roman' }),
       ],
     })
   );
 
   const signatoryTable = new Table({
-    width: { size: 100, type: WidthType.PERCENTAGE },
+    width: { size: 10466, type: WidthType.DXA },
+    columnWidths: [5700, 4766],
+    alignment: AlignmentType.CENTER,
     borders: {
       top: { style: BorderStyle.NONE },
       bottom: { style: BorderStyle.NONE },
@@ -574,11 +705,11 @@ export async function downloadApprovedRpcLetterDocx(
       new TableRow({
         children: [
           new TableCell({
-            width: { size: 55, type: WidthType.PERCENTAGE },
+            width: { size: 5700, type: WidthType.DXA },
             children: [new Paragraph({ children: [] })],
           }),
           new TableCell({
-            width: { size: 45, type: WidthType.PERCENTAGE },
+            width: { size: 4766, type: WidthType.DXA },
             children: signBlockChildren,
           }),
         ],
@@ -589,32 +720,34 @@ export async function downloadApprovedRpcLetterDocx(
   docChildren.push(signatoryTable);
 
   // ==========================================
-  // 7. Copy to Section
+  // 7. Copy to Section (Matches Preview)
   // ==========================================
   docChildren.push(
     new Paragraph({
-      spacing: { before: 180, after: 40 },
-      children: [new TextRun({ text: 'Copy to:', bold: true, size: 22, font: 'Times New Roman' })],
+      spacing: { before: 40, after: 15 },
+      children: [new TextRun({ text: 'Copy to:', bold: true, size: 19, font: 'Times New Roman' })],
     })
   );
 
   docChildren.push(
     new Paragraph({
-      spacing: { after: 200 },
-      indent: { left: 400 },
+      spacing: { after: 60 },
+      indent: { left: 300 },
       children: [
-        new TextRun({ text: '1.\tAssociate Dean- SDSR', bold: true, size: 22, font: 'Times New Roman' }),
+        new TextRun({ text: '1.\tAssociate Dean- SDSR', bold: true, size: 19, font: 'Times New Roman' }),
       ],
     })
   );
 
   // ==========================================
-  // 8. Footer Section with Dividing Line
+  // 8. Footer Section with Dividing Line (Matches Preview)
   // ==========================================
   const footerTable = new Table({
-    width: { size: 100, type: WidthType.PERCENTAGE },
+    width: { size: 10466, type: WidthType.DXA },
+    columnWidths: [5700, 4766],
+    alignment: AlignmentType.CENTER,
     borders: {
-      top: { style: BorderStyle.SINGLE, size: 12, color: '1C1917' },
+      top: { style: BorderStyle.SINGLE, size: 10, color: '1C1917' },
       bottom: { style: BorderStyle.NONE },
       left: { style: BorderStyle.NONE },
       right: { style: BorderStyle.NONE },
@@ -625,21 +758,29 @@ export async function downloadApprovedRpcLetterDocx(
       new TableRow({
         children: [
           new TableCell({
-            width: { size: 55, type: WidthType.PERCENTAGE },
-            margins: { top: 100 },
+            width: { size: 5700, type: WidthType.DXA },
+            margins: { top: 50 },
             children: [
               new Paragraph({
                 children: [
                   new TextRun({
-                    text: 'National Forensic Sciences University\n',
+                    text: 'National Forensic Sciences University',
                     bold: true,
-                    size: 19,
+                    size: 17,
                     color: '15244C',
                     font: 'Times New Roman',
                   }),
                   new TextRun({
-                    text: 'School of Doctoral Studies & Research\nSector-9, Gandhinagar, Gujarat – 382 007',
-                    size: 18,
+                    text: 'School of Doctoral Studies & Research',
+                    break: 1,
+                    size: 16,
+                    color: '1C355E',
+                    font: 'Times New Roman',
+                  }),
+                  new TextRun({
+                    text: 'Sector-9, Gandhinagar, Gujarat – 382 007',
+                    break: 1,
+                    size: 16,
                     color: '1C355E',
                     font: 'Times New Roman',
                   }),
@@ -648,21 +789,29 @@ export async function downloadApprovedRpcLetterDocx(
             ],
           }),
           new TableCell({
-            width: { size: 45, type: WidthType.PERCENTAGE },
-            margins: { top: 100 },
+            width: { size: 4766, type: WidthType.DXA },
+            margins: { top: 50 },
             children: [
               new Paragraph({
                 alignment: AlignmentType.RIGHT,
                 children: [
                   new TextRun({
-                    text: 'Tel: +91-79-23977104, Fax: +91-723247465\n',
-                    size: 18,
+                    text: 'Tel: +91-79-23977104, Fax: +91-723247465',
+                    size: 16,
                     color: '1C355E',
                     font: 'Times New Roman',
                   }),
                   new TextRun({
-                    text: 'Email: phd@nfsu.ac.in\nWebsite: nfsu.ac.in',
-                    size: 18,
+                    text: 'Email: phd@nfsu.ac.in',
+                    break: 1,
+                    size: 16,
+                    color: '1C355E',
+                    font: 'Times New Roman',
+                  }),
+                  new TextRun({
+                    text: 'Website: nfsu.ac.in',
+                    break: 1,
+                    size: 16,
                     color: '1C355E',
                     font: 'Times New Roman',
                   }),
@@ -678,7 +827,7 @@ export async function downloadApprovedRpcLetterDocx(
   docChildren.push(footerTable);
 
   // ==========================================
-  // Assemble Document
+  // Assemble Document with A4 Dimensions & Proportions
   // ==========================================
   const doc = new Document({
     creator: 'NFSU SDSR RPC Digital Portal',
@@ -693,10 +842,10 @@ export async function downloadApprovedRpcLetterDocx(
               height: 16838, // A4 height: 297mm in dxa
             },
             margin: {
-              top: 1000, // ~17.6mm
-              bottom: 1000,
-              left: 1134, // ~20mm
-              right: 1134,
+              top: 720, // 0.5 in (~12.7mm)
+              bottom: 720,
+              left: 720, // ~12.7mm (0.5 in)
+              right: 720,
             },
           },
         },

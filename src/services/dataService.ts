@@ -36,40 +36,28 @@ import {
   DEMO_AUDIT_LOGS,
   createLetterData,
 } from '../data/initialDemoData';
+import {
+  syncLoadedExcelToFirestore,
+  loadLoadedExcelFromFirestore,
+} from './excelService';
 
-// Known legacy demo IDs to prune so only Richard Cherehani Kashindye (specimen) and approved records remain
-const REMOVED_DEMO_RPC_IDS = new Set([
-  'rpc-richard-1',
-  'rpc-richard-2',
-  'rpc-richard-3',
-  'rpc-richard-4',
-  'rpc-devanshi-1',
+// Legacy obsolete IDs to ignore
+const REMOVED_LEGACY_IDS = new Set([
   'rpc-edy-1',
   'rpc-sunganani-1',
-  'rpc-netra-1',
   'rpc-pritesh-2',
-]);
-
-const REMOVED_DEMO_SCHOLAR_IDS = new Set([
-  'sch-devanshi',
   'sch-edy',
   'sch-sunganani',
-  'sch-netra',
   'sch-pritesh',
 ]);
 
-const REMOVED_DEMO_AUDIT_IDS = new Set([
-  'audit-1',
-  'audit-2',
-  'audit-3',
-  'audit-4',
-  'audit-5',
-  'audit-6',
-  'audit-7',
-  'audit-richard-1',
-  'audit-richard-2',
-  'audit-richard-3',
-]);
+// Persistent storage keys to guarantee zero data loss
+export const LOCAL_STORAGE_RPC_RECORDS_KEY = 'nfsu_portal_rpc_records_persistent';
+export const LOCAL_STORAGE_SCHOLARS_KEY = 'nfsu_portal_scholars_persistent';
+export const LOCAL_STORAGE_MEMBERS_KEY = 'nfsu_portal_members_persistent';
+export const LOCAL_STORAGE_AUDIT_LOGS_KEY = 'nfsu_portal_audit_logs_persistent';
+export const LOCAL_STORAGE_DOCUMENTS_KEY = 'nfsu_portal_documents_persistent';
+export const LOCAL_STORAGE_PENDING_QUEUE_KEY = 'nfsu_portal_pending_writes_persistent';
 
 // In-memory mirror to guarantee instant reactivity, resilience and zero-lag experience
 let memoryRpcRecords: RpcRecord[] = [...DEMO_RPC_RECORDS];
@@ -80,116 +68,313 @@ let memoryDocuments: DocumentSnapshot[] = [];
 
 let isInitialized = false;
 
+// Immediately persist all active work to local storage and broadcast to open tabs/components
+export function saveAllPortalDataLocally(): void {
+  if (typeof window === 'undefined') return;
+  try {
+    localStorage.setItem(LOCAL_STORAGE_RPC_RECORDS_KEY, JSON.stringify(memoryRpcRecords));
+    localStorage.setItem(LOCAL_STORAGE_SCHOLARS_KEY, JSON.stringify(memoryScholars));
+    localStorage.setItem(LOCAL_STORAGE_MEMBERS_KEY, JSON.stringify(memoryMembers));
+    localStorage.setItem(LOCAL_STORAGE_AUDIT_LOGS_KEY, JSON.stringify(memoryAuditLogs));
+    localStorage.setItem(LOCAL_STORAGE_DOCUMENTS_KEY, JSON.stringify(memoryDocuments));
+    window.dispatchEvent(
+      new CustomEvent('nfsu-portal-data-changed', {
+        detail: { timestamp: Date.now(), count: memoryRpcRecords.length },
+      })
+    );
+  } catch (err) {
+    console.warn('LocalStorage save warning:', err);
+  }
+}
+
+// Load all saved work from local storage immediately on startup
+export function loadAllPortalDataLocally(): boolean {
+  if (typeof window === 'undefined') return false;
+  try {
+    let loaded = false;
+    const rawRpcs = localStorage.getItem(LOCAL_STORAGE_RPC_RECORDS_KEY);
+    const rawSchs = localStorage.getItem(LOCAL_STORAGE_SCHOLARS_KEY);
+    const rawMems = localStorage.getItem(LOCAL_STORAGE_MEMBERS_KEY);
+    const rawAudits = localStorage.getItem(LOCAL_STORAGE_AUDIT_LOGS_KEY);
+    const rawDocs = localStorage.getItem(LOCAL_STORAGE_DOCUMENTS_KEY);
+
+    if (rawRpcs) {
+      const parsed = JSON.parse(rawRpcs);
+      if (Array.isArray(parsed) && parsed.length > 0) {
+        memoryRpcRecords = parsed.filter((r) => !REMOVED_LEGACY_IDS.has(r.id));
+        loaded = true;
+      }
+    }
+    if (rawSchs) {
+      const parsed = JSON.parse(rawSchs);
+      if (Array.isArray(parsed) && parsed.length > 0) {
+        memoryScholars = parsed.filter((s) => !REMOVED_LEGACY_IDS.has(s.id));
+        loaded = true;
+      }
+    }
+    if (rawMems) {
+      const parsed = JSON.parse(rawMems);
+      if (Array.isArray(parsed) && parsed.length > 0) {
+        memoryMembers = parsed;
+      }
+    }
+    if (rawAudits) {
+      const parsed = JSON.parse(rawAudits);
+      if (Array.isArray(parsed) && parsed.length > 0) {
+        memoryAuditLogs = parsed;
+      }
+    }
+    if (rawDocs) {
+      const parsed = JSON.parse(rawDocs);
+      if (Array.isArray(parsed) && parsed.length > 0) {
+        memoryDocuments = parsed;
+      }
+    }
+    return loaded;
+  } catch (err) {
+    console.warn('LocalStorage load warning:', err);
+    return false;
+  }
+}
+
+// Queue write operation to Firestore if offline or network glitch
+function queueFirestoreWrite(collectionName: string, docId: string, data: any): void {
+  if (typeof window === 'undefined') return;
+  try {
+    const raw = localStorage.getItem(LOCAL_STORAGE_PENDING_QUEUE_KEY);
+    const queue: Array<{ collection: string; id: string; data: any; time: number }> = raw ? JSON.parse(raw) : [];
+    const existingIdx = queue.findIndex((q) => q.collection === collectionName && q.id === docId);
+    if (existingIdx !== -1) {
+      queue[existingIdx] = { collection: collectionName, id: docId, data, time: Date.now() };
+    } else {
+      queue.push({ collection: collectionName, id: docId, data, time: Date.now() });
+    }
+    localStorage.setItem(LOCAL_STORAGE_PENDING_QUEUE_KEY, JSON.stringify(queue));
+  } catch (e) {}
+}
+
+// Flush pending queue to Firestore
+export async function flushPendingFirestoreWrites(): Promise<void> {
+  if (typeof window === 'undefined') return;
+  try {
+    const raw = localStorage.getItem(LOCAL_STORAGE_PENDING_QUEUE_KEY);
+    if (!raw) return;
+    const queue: Array<{ collection: string; id: string; data: any; time: number }> = JSON.parse(raw);
+    if (queue.length === 0) return;
+
+    const remaining: typeof queue = [];
+    for (const item of queue) {
+      try {
+        await setDoc(doc(db, item.collection, item.id), item.data);
+      } catch (err) {
+        remaining.push(item);
+      }
+    }
+    if (remaining.length > 0) {
+      localStorage.setItem(LOCAL_STORAGE_PENDING_QUEUE_KEY, JSON.stringify(remaining));
+    } else {
+      localStorage.removeItem(LOCAL_STORAGE_PENDING_QUEUE_KEY);
+    }
+  } catch (e) {}
+}
+
+/**
+ * Master Save Function: Guarantees that every single piece of work done on the portal
+ * (RPC records, scholars, committee members, audit logs, document snapshots, and loaded Excel datasets)
+ * is immediately written to localStorage and queued/persisted to cloud Firestore.
+ */
+export async function saveAllPortalWork(): Promise<boolean> {
+  saveAllPortalDataLocally();
+  try {
+    // 1. Flush offline write queue
+    await flushPendingFirestoreWrites();
+
+    // 2. Persist any unpersisted memory records to Firestore
+    for (const r of memoryRpcRecords) {
+      if (!REMOVED_LEGACY_IDS.has(r.id)) {
+        setDoc(doc(db, 'rpcRecords', r.id), r).catch(() => queueFirestoreWrite('rpcRecords', r.id, r));
+      }
+    }
+    for (const s of memoryScholars) {
+      if (!REMOVED_LEGACY_IDS.has(s.id)) {
+        setDoc(doc(db, 'scholars', s.id), s).catch(() => queueFirestoreWrite('scholars', s.id, s));
+      }
+    }
+
+    // 3. Sync loaded Excel roster data to Firestore
+    syncLoadedExcelToFirestore().catch(() => {});
+
+    if (typeof window !== 'undefined') {
+      window.dispatchEvent(
+        new CustomEvent('nfsu-portal-work-saved', {
+          detail: { timestamp: Date.now(), count: memoryRpcRecords.length },
+        })
+      );
+    }
+    return true;
+  } catch (err) {
+    console.warn('saveAllPortalWork fallback to local persistence:', err);
+    return false;
+  }
+}
+
+// Immediately hydrate on client evaluation
+if (typeof window !== 'undefined') {
+  loadAllPortalDataLocally();
+  // Listen to storage events from other tabs
+  window.addEventListener('storage', (e) => {
+    if (
+      e.key === LOCAL_STORAGE_RPC_RECORDS_KEY ||
+      e.key === LOCAL_STORAGE_SCHOLARS_KEY ||
+      e.key === LOCAL_STORAGE_AUDIT_LOGS_KEY
+    ) {
+      loadAllPortalDataLocally();
+      window.dispatchEvent(new CustomEvent('nfsu-portal-data-changed', { detail: { timestamp: Date.now() } }));
+    }
+  });
+
+  // Automatically save all work on page unload or visibility change
+  window.addEventListener('beforeunload', () => {
+    saveAllPortalDataLocally();
+    saveAllPortalWork();
+  });
+
+  document.addEventListener('visibilitychange', () => {
+    if (document.visibilityState === 'hidden') {
+      saveAllPortalDataLocally();
+      saveAllPortalWork();
+    }
+  });
+
+  // Background auto-save safety loop every 20 seconds
+  setInterval(() => {
+    saveAllPortalDataLocally();
+  }, 20000);
+}
+
 export async function initializeDatabase(): Promise<void> {
   if (isInitialized) return;
   try {
+    // 1. Immediately hydrate local storage so UI has immediate access to all previously saved work
+    loadAllPortalDataLocally();
+
+    // 2. Sync with cloud Firestore
     const rpcSnap = await getDocs(collection(db, 'rpcRecords'));
     if (rpcSnap.empty) {
       console.log('Seeding initial NFSU SDSR database to Firestore...');
       const batch = writeBatch(db);
 
-      DEMO_SCHOLARS.forEach((s) => {
+      memoryScholars.forEach((s) => {
         batch.set(doc(db, 'scholars', s.id), s);
       });
-      DEMO_MEMBERS.forEach((m) => {
+      memoryMembers.forEach((m) => {
         batch.set(doc(db, 'rpcMembers', m.id), m);
       });
-      DEMO_RPC_RECORDS.forEach((r) => {
+      memoryRpcRecords.forEach((r) => {
         batch.set(doc(db, 'rpcRecords', r.id), r);
       });
-      DEMO_AUDIT_LOGS.forEach((a) => {
+      memoryAuditLogs.forEach((a) => {
         batch.set(doc(db, 'auditLogs', a.id), a);
       });
 
       await batch.commit();
-      console.log('Database seeded successfully with clean approved specimen records.');
+      console.log('Database seeded successfully.');
     } else {
-      // Hydrate memory cache from Firestore while pruning any legacy removed demo items
-      const rpcs: RpcRecord[] = [];
-      const rpcDeletePromises: Promise<any>[] = [];
+      // Merge Firestore records with local storage
+      const firestoreRpcs: RpcRecord[] = [];
       rpcSnap.forEach((d) => {
-        if (REMOVED_DEMO_RPC_IDS.has(d.id)) {
-          rpcDeletePromises.push(deleteDoc(doc(db, 'rpcRecords', d.id)).catch(() => {}));
-        } else {
+        if (!REMOVED_LEGACY_IDS.has(d.id)) {
           const item = d.data() as RpcRecord;
           if (item.approvedBy && item.approvedBy.includes('Junare')) {
             item.approvedBy = 'Dean, SDSR';
           }
-          if (item.id === 'rpc-devanshi-1' && item.status === 'APPROVED') {
-            item.status = 'PENDING_DEAN_APPROVAL';
-            item.approvedBy = undefined;
-            item.approvedAt = undefined;
-            item.approvedDocumentReference = undefined;
-            setDoc(doc(db, 'rpcRecords', item.id), item).catch(() => {});
+          firestoreRpcs.push(item);
+        }
+      });
+
+      // Merge: For every record in Firestore, update or add to memory
+      firestoreRpcs.forEach((fRec) => {
+        const localIdx = memoryRpcRecords.findIndex((r) => r.id === fRec.id);
+        if (localIdx !== -1) {
+          const localRec = memoryRpcRecords[localIdx];
+          // Take the newer version if exists
+          const fTime = fRec.updatedAt || fRec.createdAt || '';
+          const lTime = localRec.updatedAt || localRec.createdAt || '';
+          if (fTime > lTime || (!localRec.approvedBy && fRec.approvedBy)) {
+            memoryRpcRecords[localIdx] = fRec;
           }
-          rpcs.push(item);
-        }
-      });
-      if (rpcDeletePromises.length > 0) {
-        Promise.all(rpcDeletePromises).catch(() => {});
-      }
-      // Ensure Richard's approved records are preserved
-      DEMO_RPC_RECORDS.forEach((r) => {
-        if (!rpcs.some((x) => x.id === r.id)) {
-          rpcs.push(r);
-          setDoc(doc(db, 'rpcRecords', r.id), r).catch(() => {});
-        }
-      });
-      memoryRpcRecords = rpcs;
-
-      const schSnap = await getDocs(collection(db, 'scholars'));
-      const schs: Scholar[] = [];
-      const schDeletePromises: Promise<any>[] = [];
-      schSnap.forEach((d) => {
-        if (REMOVED_DEMO_SCHOLAR_IDS.has(d.id)) {
-          schDeletePromises.push(deleteDoc(doc(db, 'scholars', d.id)).catch(() => {}));
         } else {
-          schs.push(d.data() as Scholar);
+          memoryRpcRecords.push(fRec);
         }
       });
-      if (schDeletePromises.length > 0) {
-        Promise.all(schDeletePromises).catch(() => {});
-      }
-      DEMO_SCHOLARS.forEach((s) => {
-        if (!schs.some((x) => x.id === s.id)) {
-          schs.push(s);
-          setDoc(doc(db, 'scholars', s.id), s).catch(() => {});
-        }
-      });
-      memoryScholars = schs;
 
+      // For every local record not yet in Firestore, sync it up
+      for (const lRec of memoryRpcRecords) {
+        if (!firestoreRpcs.some((f) => f.id === lRec.id)) {
+          setDoc(doc(db, 'rpcRecords', lRec.id), lRec).catch((err) => {
+            queueFirestoreWrite('rpcRecords', lRec.id, lRec);
+          });
+        }
+      }
+
+      // Scholars merge
+      const schSnap = await getDocs(collection(db, 'scholars'));
+      const firestoreSchs: Scholar[] = [];
+      schSnap.forEach((d) => {
+        if (!REMOVED_LEGACY_IDS.has(d.id)) {
+          firestoreSchs.push(d.data() as Scholar);
+        }
+      });
+      firestoreSchs.forEach((fSch) => {
+        const localIdx = memoryScholars.findIndex((s) => s.id === fSch.id);
+        if (localIdx !== -1) {
+          memoryScholars[localIdx] = { ...memoryScholars[localIdx], ...fSch };
+        } else {
+          memoryScholars.push(fSch);
+        }
+      });
+      for (const lSch of memoryScholars) {
+        if (!firestoreSchs.some((f) => f.id === lSch.id)) {
+          setDoc(doc(db, 'scholars', lSch.id), lSch).catch(() => {
+            queueFirestoreWrite('scholars', lSch.id, lSch);
+          });
+        }
+      }
+
+      // Members merge
       const memSnap = await getDocs(collection(db, 'rpcMembers'));
       const mems: RpcMember[] = [];
       memSnap.forEach((d) => mems.push(d.data() as RpcMember));
       if (mems.length > 0) {
         memoryMembers = mems;
-      } else {
-        DEMO_MEMBERS.forEach((m) => {
-          setDoc(doc(db, 'rpcMembers', m.id), m).catch(() => {});
-        });
       }
 
+      // Audit logs merge
       const auditSnap = await getDocs(collection(db, 'auditLogs'));
-      const audits: AuditLog[] = [];
+      const firestoreAudits: AuditLog[] = [];
       auditSnap.forEach((d) => {
-        if (REMOVED_DEMO_AUDIT_IDS.has(d.id)) {
-          deleteDoc(doc(db, 'auditLogs', d.id)).catch(() => {});
-        } else {
-          audits.push(d.data() as AuditLog);
+        if (!REMOVED_LEGACY_IDS.has(d.id)) {
+          firestoreAudits.push(d.data() as AuditLog);
         }
       });
-      DEMO_AUDIT_LOGS.forEach((a) => {
-        if (!audits.some((x) => x.id === a.id)) {
-          audits.push(a);
-          setDoc(doc(db, 'auditLogs', a.id), a).catch(() => {});
+      firestoreAudits.forEach((fAud) => {
+        if (!memoryAuditLogs.some((a) => a.id === fAud.id)) {
+          memoryAuditLogs.push(fAud);
         }
       });
-      memoryAuditLogs = audits;
     }
+
+    // Persist unified merged state locally
+    saveAllPortalDataLocally();
+    // Flush any pending queue
+    flushPendingFirestoreWrites();
+    // Restore any saved Excel roster from Firestore
+    await loadLoadedExcelFromFirestore().catch(() => {});
   } catch (err) {
-    console.warn('Firestore initialization fallback to robust in-memory storage:', err);
+    console.warn('Firestore initialization sync completed with resilient local storage fallback:', err);
   } finally {
     isInitialized = true;
+    saveAllPortalDataLocally();
   }
 }
 
@@ -207,14 +392,12 @@ export async function resetToCleanSpecimenDatabase(): Promise<void> {
     const batch = writeBatch(db);
 
     // Delete legacy items
-    for (const rpcId of REMOVED_DEMO_RPC_IDS) {
-      batch.delete(doc(db, 'rpcRecords', rpcId));
-    }
-    for (const schId of REMOVED_DEMO_SCHOLAR_IDS) {
-      batch.delete(doc(db, 'scholars', schId));
-    }
-    for (const auditId of REMOVED_DEMO_AUDIT_IDS) {
-      batch.delete(doc(db, 'auditLogs', auditId));
+    for (const legacyId of Array.from(REMOVED_LEGACY_IDS)) {
+      if (legacyId.startsWith('rpc-')) {
+        batch.delete(doc(db, 'rpcRecords', legacyId));
+      } else if (legacyId.startsWith('sch-')) {
+        batch.delete(doc(db, 'scholars', legacyId));
+      }
     }
 
     // Set clean items
@@ -236,7 +419,7 @@ export async function getAllRpcRecords(): Promise<RpcRecord[]> {
     if (!snap.empty) {
       const records: RpcRecord[] = [];
       snap.forEach((d) => {
-        if (!REMOVED_DEMO_RPC_IDS.has(d.id)) {
+        if (!REMOVED_LEGACY_IDS.has(d.id)) {
           const rec = d.data() as RpcRecord;
           if (rec.approvedBy && rec.approvedBy.includes('Junare')) {
             rec.approvedBy = 'Dean, SDSR';
@@ -244,13 +427,20 @@ export async function getAllRpcRecords(): Promise<RpcRecord[]> {
           records.push(rec);
         }
       });
+      // Merge with any freshly created local records not yet returned by getDocs
+      for (const localRec of memoryRpcRecords) {
+        if (!records.some((r) => r.id === localRec.id) && !REMOVED_LEGACY_IDS.has(localRec.id)) {
+          records.unshift(localRec);
+        }
+      }
       memoryRpcRecords = records;
+      saveAllPortalDataLocally();
       return records;
     }
   } catch (err) {
     console.warn('Using local cache for RPC records:', err);
   }
-  return memoryRpcRecords.filter((r) => !REMOVED_DEMO_RPC_IDS.has(r.id));
+  return memoryRpcRecords.filter((r) => !REMOVED_LEGACY_IDS.has(r.id));
 }
 
 /**
@@ -261,6 +451,7 @@ export async function deleteRpcRecord(recordId: string): Promise<boolean> {
   if (idx !== -1) {
     memoryRpcRecords.splice(idx, 1);
   }
+  saveAllPortalDataLocally();
   try {
     await deleteDoc(doc(db, 'rpcRecords', recordId));
     return true;
@@ -276,11 +467,11 @@ export async function deleteRpcRecord(recordId: string): Promise<boolean> {
  */
 export async function removeAllApprovedRpcRecords(): Promise<number> {
   // Collect all approved records
-  const approved = memoryRpcRecords.filter((r) => r.status === 'APPROVED' || REMOVED_DEMO_RPC_IDS.has(r.id));
+  const approved = memoryRpcRecords.filter((r) => r.status === 'APPROVED' || REMOVED_LEGACY_IDS.has(r.id));
   const count = approved.length;
 
   // Filter out of memory
-  memoryRpcRecords = memoryRpcRecords.filter((r) => r.status !== 'APPROVED' && !REMOVED_DEMO_RPC_IDS.has(r.id));
+  memoryRpcRecords = memoryRpcRecords.filter((r) => r.status !== 'APPROVED' && !REMOVED_LEGACY_IDS.has(r.id));
 
   // Reset scholar current RPC number to 1
   memoryScholars.forEach((sch) => {
@@ -288,13 +479,15 @@ export async function removeAllApprovedRpcRecords(): Promise<number> {
     setDoc(doc(db, 'scholars', sch.id), sch).catch(() => {});
   });
 
+  saveAllPortalDataLocally();
+
   // Delete all approved and legacy demo records from Firestore
   try {
     const snap = await getDocs(collection(db, 'rpcRecords'));
     const deletePromises: Promise<any>[] = [];
     snap.forEach((d) => {
       const data = d.data() as RpcRecord;
-      if (data.status === 'APPROVED' || REMOVED_DEMO_RPC_IDS.has(d.id)) {
+      if (data.status === 'APPROVED' || REMOVED_LEGACY_IDS.has(d.id)) {
         deletePromises.push(deleteDoc(doc(db, 'rpcRecords', d.id)).catch(() => {}));
       }
     });
@@ -304,7 +497,7 @@ export async function removeAllApprovedRpcRecords(): Promise<number> {
       const docSnap = await getDocs(collection(db, 'documentSnapshots'));
       docSnap.forEach((d) => {
         const data = d.data();
-        if (data.status === 'APPROVED' || REMOVED_DEMO_RPC_IDS.has(data.rpcRecordId)) {
+        if (data.status === 'APPROVED' || REMOVED_LEGACY_IDS.has(data.rpcRecordId)) {
           deletePromises.push(deleteDoc(doc(db, 'documentSnapshots', d.id)).catch(() => {}));
         }
       });
@@ -501,11 +694,13 @@ export async function addAuditLog(
   };
 
   memoryAuditLogs.push(log);
+  saveAllPortalDataLocally();
 
   try {
     await setDoc(doc(db, 'auditLogs', log.id), log);
   } catch (err) {
-    console.warn('Could not persist audit log to Firestore:', err);
+    console.warn('Could not persist audit log to Firestore, queued locally:', err);
+    queueFirestoreWrite('auditLogs', log.id, log);
   }
 
   return log;
@@ -533,15 +728,17 @@ export async function updateRpcRecord(
     updatedAt: new Date().toISOString(),
   };
 
-  // Update in memory
+  // Update in memory & immediately save locally
   const idx = memoryRpcRecords.findIndex((r) => r.id === recordId);
   if (idx !== -1) memoryRpcRecords[idx] = updatedRecord;
+  saveAllPortalDataLocally();
 
   // Persist to Firestore
   try {
     await setDoc(doc(db, 'rpcRecords', recordId), updatedRecord);
   } catch (err) {
-    console.warn('Could not update Firestore record, kept in memory:', err);
+    console.warn('Could not update Firestore record, queued locally:', err);
+    queueFirestoreWrite('rpcRecords', recordId, updatedRecord);
   }
 
   if (logAction) {
@@ -557,7 +754,157 @@ export async function updateRpcRecord(
   return updatedRecord;
 }
 
-// Create new RPC request with sequencing validation
+// Ensure scholar exists in database (or register new scholar from Excel roster)
+export async function ensureScholarRegistered(scholar: Scholar): Promise<Scholar> {
+  const existing = memoryScholars.find(
+    (s) =>
+      s.id === scholar.id ||
+      s.enrollmentNo.trim().toLowerCase() === scholar.enrollmentNo.trim().toLowerCase()
+  );
+  if (existing) {
+    return existing;
+  }
+  memoryScholars.push(scholar);
+  saveAllPortalDataLocally();
+  try {
+    await setDoc(doc(db, 'scholars', scholar.id), scholar);
+  } catch (err) {
+    console.warn('Could not persist new scholar to Firestore, queued locally:', err);
+    queueFirestoreWrite('scholars', scholar.id, scholar);
+  }
+  return scholar;
+}
+
+// Update scholar record details (e.g. topic, department, contact info, guide)
+export async function updateScholarRecord(
+  scholarId: string,
+  updates: Partial<Scholar>,
+  user: UserProfile,
+  logAction?: string,
+  logDetails?: string
+): Promise<Scholar> {
+  const scholarIdx = memoryScholars.findIndex((s) => s.id === scholarId);
+  if (scholarIdx === -1) {
+    throw new Error('Scholar not found');
+  }
+
+  const updatedScholar: Scholar = {
+    ...memoryScholars[scholarIdx],
+    ...updates,
+  };
+
+  memoryScholars[scholarIdx] = updatedScholar;
+  saveAllPortalDataLocally();
+
+  try {
+    await setDoc(doc(db, 'scholars', scholarId), updatedScholar);
+  } catch (err) {
+    console.warn('Could not update Firestore scholar, queued locally:', err);
+    queueFirestoreWrite('scholars', scholarId, updatedScholar);
+  }
+
+  // Also update scholar details inside any non-approved RPC records for this scholar
+  memoryRpcRecords.forEach((r, idx) => {
+    if (r.scholarId === scholarId && r.status !== 'APPROVED') {
+      let rChanged = false;
+      if (updates.name && r.scholarName !== updates.name) {
+        r.scholarName = updates.name;
+        rChanged = true;
+      }
+      if (updates.enrollmentNo && r.enrollmentNo !== updates.enrollmentNo) {
+        r.enrollmentNo = updates.enrollmentNo;
+        rChanged = true;
+      }
+      if (updates.school && r.school !== updates.school) {
+        r.school = updates.school;
+        rChanged = true;
+      }
+      if (r.letterData) {
+        if (updates.name) r.letterData.scholarName = updates.name;
+        if (updates.school) r.letterData.schoolName = updates.school;
+        if (updates.guideName) r.letterData.guideName = updates.guideName;
+        if (updates.guideDesignation) r.letterData.guideDesignation = updates.guideDesignation;
+        rChanged = true;
+      }
+      if (rChanged) {
+        memoryRpcRecords[idx] = { ...r, updatedAt: new Date().toISOString() };
+        setDoc(doc(db, 'rpcRecords', r.id), memoryRpcRecords[idx]).catch(() => {});
+      }
+    }
+  });
+
+  saveAllPortalDataLocally();
+
+  if (logAction) {
+    await addAuditLog(
+      'scholar-update',
+      scholarId,
+      logAction,
+      user,
+      logDetails || `Updated scholar details: ${Object.keys(updates).join(', ')}`
+    );
+  }
+
+  return updatedScholar;
+}
+
+// Update RPC Committee Members for a record
+export async function updateRpcMembers(
+  recordId: string,
+  members: {
+    guide: RpcMember;
+    internalExpert: RpcMember;
+    externalExpert1: RpcMember;
+    externalExpert2: RpcMember;
+  },
+  user: UserProfile
+): Promise<RpcRecord> {
+  const record = memoryRpcRecords.find((r) => r.id === recordId);
+  if (!record) throw new Error('Record not found');
+
+  if (record.status === 'APPROVED') {
+    throw new Error('Approved records are immutable.');
+  }
+
+  let updatedLetterData: OfficialLetterData | undefined = undefined;
+  if (record.letterData) {
+    updatedLetterData = {
+      ...record.letterData,
+      guideName: members.guide.name,
+      guideDesignation: members.guide.designation,
+      guideSchool: members.guide.schoolOrInstitution || record.school,
+      internalExpertName: members.internalExpert.name,
+      internalExpertDesignation: members.internalExpert.designation,
+      internalExpertDept: members.internalExpert.department,
+      internalExpertCampus: members.internalExpert.schoolOrInstitution,
+      externalExpert1Name: members.externalExpert1.name,
+      externalExpert1Designation: members.externalExpert1.designation,
+      externalExpert1Dept: members.externalExpert1.department,
+      externalExpert1Inst: members.externalExpert1.schoolOrInstitution,
+      externalExpert1City: members.externalExpert1.location,
+      externalExpert2Name: members.externalExpert2.name,
+      externalExpert2Designation: members.externalExpert2.designation,
+      externalExpert2Dept: members.externalExpert2.department,
+      externalExpert2Inst: members.externalExpert2.schoolOrInstitution,
+      externalExpert2City: members.externalExpert2.location,
+    };
+  }
+
+  const updated = await updateRpcRecord(
+    recordId,
+    {
+      rpcMembers: members,
+      ...(updatedLetterData ? { letterData: updatedLetterData } : {}),
+    },
+    user,
+    'RPC Committee Members Updated',
+    `Updated committee members: Guide: ${members.guide.name}, Internal: ${members.internalExpert.name}, External 1: ${members.externalExpert1.name}, External 2: ${members.externalExpert2.name}`
+  );
+
+  return updated;
+}
+
+// Create new RPC request with sequencing validation (supports both database scholars and loaded Excel roster data)
 export async function createNewRpcRequest(
   scholarId: string,
   rpcNumber: number,
@@ -572,19 +919,28 @@ export async function createNewRpcRequest(
     externalExpert2: RpcMember;
   },
   requestDetails: string,
-  user: UserProfile
+  user: UserProfile,
+  scholarDataOverride?: Scholar
 ): Promise<RpcRecord> {
   if (user.role !== 'SDSR_OFFICE') {
     throw new Error('Only SDSR Office users are authorized to create new RPC requests.');
   }
 
-  // Validate sequence
-  const seqCheck = await validateRpcSequence(scholarId, rpcNumber);
-  if (!seqCheck.isValid) {
-    throw new Error(seqCheck.message);
+  // If scholarDataOverride provided, ensure scholar is registered in database
+  let scholar = await getScholarById(scholarId);
+  if (!scholar && scholarDataOverride) {
+    scholar = await ensureScholarRegistered(scholarDataOverride);
   }
 
-  const scholar = await getScholarById(scholarId);
+  // Validate sequence (if brand new scholar with no history, validate against their registered currentRpcNo or 1)
+  const history = await getScholarRpcHistory(scholarId);
+  if (history.length > 0) {
+    const seqCheck = await validateRpcSequence(scholarId, rpcNumber);
+    if (!seqCheck.isValid) {
+      throw new Error(seqCheck.message);
+    }
+  }
+
   if (!scholar) throw new Error('Scholar not found.');
 
   const newId = `rpc-${scholar.id.replace('sch-', '')}-${rpcNumber}-${Date.now().toString().slice(-4)}`;
@@ -617,11 +973,13 @@ export async function createNewRpcRequest(
   };
 
   memoryRpcRecords.unshift(newRecord);
+  saveAllPortalDataLocally();
 
   try {
     await setDoc(doc(db, 'rpcRecords', newId), newRecord);
   } catch (err) {
-    console.warn('Error creating RPC in Firestore:', err);
+    console.warn('Error creating RPC in Firestore, queued locally:', err);
+    queueFirestoreWrite('rpcRecords', newId, newRecord);
   }
 
   await addAuditLog(
@@ -816,6 +1174,8 @@ export async function approveRpc(recordId: string, deanUser: UserProfile): Promi
     `Finalized immutable official letter snapshot: ${approvedDocRef}.`
   );
 
+  saveAllPortalDataLocally();
+
   return updated;
 }
 
@@ -1006,6 +1366,8 @@ export async function bulkImportScholarsAndRpc(
     currentUser,
     `SDSR Office bulk loaded Excel data: Added ${scholarsAdded} new scholars, updated ${scholarsUpdated} scholars, created/updated ${rpcAdded} RPC records.`
   );
+
+  saveAllPortalDataLocally();
 
   return {
     scholarsAdded,
@@ -1284,6 +1646,8 @@ export async function prepareAndApproveRpcLetter(
       `SDSR Office prepared letter draft (${letterRef}) and submitted for Dean approval.`
     );
   }
+
+  saveAllPortalDataLocally();
 
   return finalRecord;
 }
