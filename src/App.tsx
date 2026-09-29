@@ -361,8 +361,8 @@ export default function App() {
           record={draftingRecord}
           currentUser={currentUser}
           onSaveSuccess={handleLetterSaved}
-          onForwardToDeanClick={() => {
-            const rec = draftingRecord;
+          onForwardToDeanClick={(latestRecord) => {
+            const rec = latestRecord || draftingRecord;
             setDraftingRecord(null);
             setForwardingRecord(rec);
           }}

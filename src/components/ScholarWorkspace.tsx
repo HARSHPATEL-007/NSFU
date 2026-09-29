@@ -21,6 +21,7 @@ import {
   getAllMembers,
   saveAllPortalWork,
 } from '../services/dataService';
+import { formatDisplayDate } from '../utils/dateUtils';
 import {
   ArrowLeft,
   Calendar,
@@ -102,6 +103,7 @@ export const ScholarWorkspace: React.FC<ScholarWorkspaceProps> = ({
   const [autoSaveStatus, setAutoSaveStatus] = useState<AutoSaveState>('saved');
   const [lastSavedAt, setLastSavedAt] = useState<string | null>(null);
   const [autoSaveError, setAutoSaveError] = useState<string | null>(null);
+  const [manualSaveSuccessNotice, setManualSaveSuccessNotice] = useState(false);
 
   // Edit fields
   const [editDate, setEditDate] = useState(record.rpcDate || '');
@@ -147,7 +149,7 @@ export const ScholarWorkspace: React.FC<ScholarWorkspaceProps> = ({
   const loadScholarData = async () => {
     const s = await getScholarById(record.scholarId);
     setScholar(s);
-    if (s) {
+    if (s && !isEditingScholar) {
       setScholarTopic(s.researchTopic || '');
       setScholarEmail(s.contactDetails?.email || '');
       setScholarPhone(s.contactDetails?.phone || '');
@@ -162,8 +164,8 @@ export const ScholarWorkspace: React.FC<ScholarWorkspaceProps> = ({
     const notifs = await getEmailNotificationsForRecord(record.id);
     setEmailNotifications(notifs);
 
-    // Sync member edit defaults
-    if (record.rpcMembers) {
+    // Sync member edit defaults only if not actively editing
+    if (record.rpcMembers && !isEditingMembers) {
       setEditGuideName(record.rpcMembers.guide?.name || s?.guideName || '');
       setEditGuideDesig(record.rpcMembers.guide?.designation || s?.guideDesignation || 'Professor');
       setEditGuideDept(record.rpcMembers.guide?.department || s?.department || record.school);
@@ -231,11 +233,7 @@ export const ScholarWorkspace: React.FC<ScholarWorkspaceProps> = ({
         let updatedLetterData: OfficialLetterData | undefined = undefined;
         if (record.letterData) {
           const formattedDateText = dateVal
-            ? new Date(dateVal).toLocaleDateString('en-GB', {
-                day: 'numeric',
-                month: 'long',
-                year: 'numeric',
-              })
+            ? formatDisplayDate(dateVal)
             : record.letterData.meetingDateText;
 
           const formattedModeText =
@@ -309,21 +307,42 @@ export const ScholarWorkspace: React.FC<ScholarWorkspaceProps> = ({
   }, [performAutoSave]);
 
   const handleBackWithSave = async () => {
+    if (isEditingScholar) {
+      await handleSaveScholar();
+    }
+    if (isEditingMembers) {
+      await handleSaveMembers();
+    }
     await flushAutoSave();
+    await saveAllPortalWork();
     onBackToDashboard();
   };
 
   const handleManualSave = async () => {
     setAutoSaveStatus('saving');
-    await flushAutoSave();
-    await saveAllPortalWork();
-    setAutoSaveStatus('saved');
-    const timeStr = new Date().toLocaleTimeString([], {
-      hour: '2-digit',
-      minute: '2-digit',
-      second: '2-digit',
-    });
-    setLastSavedAt(timeStr);
+    try {
+      if (isEditingScholar) {
+        await handleSaveScholar();
+      }
+      if (isEditingMembers) {
+        await handleSaveMembers();
+      }
+      await flushAutoSave();
+      await saveAllPortalWork();
+      setAutoSaveStatus('saved');
+      const timeStr = new Date().toLocaleTimeString([], {
+        hour: '2-digit',
+        minute: '2-digit',
+        second: '2-digit',
+      });
+      setLastSavedAt(timeStr);
+      setManualSaveSuccessNotice(true);
+      setTimeout(() => setManualSaveSuccessNotice(false), 3500);
+    } catch (err: any) {
+      console.error('Save work error:', err);
+      setAutoSaveStatus('error');
+      setAutoSaveError(err.message || 'Failed to save changes');
+    }
   };
 
   const handleSaveScholar = async () => {
@@ -576,6 +595,13 @@ export const ScholarWorkspace: React.FC<ScholarWorkspaceProps> = ({
             {/* If New, In Verification, or Returned */}
             {!isApproved && !isPendingDean && isOffice && (
               <>
+                {manualSaveSuccessNotice && (
+                  <span className="inline-flex items-center gap-1 text-xs font-semibold text-emerald-800 bg-emerald-100 px-2.5 py-1 rounded border border-emerald-300 animate-fade-in shadow-2xs">
+                    <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" />
+                    <span>All Work Saved!</span>
+                  </span>
+                )}
+
                 <button
                   onClick={handleManualSave}
                   id="btn-manual-save-workspace"
@@ -583,8 +609,17 @@ export const ScholarWorkspace: React.FC<ScholarWorkspaceProps> = ({
                   title="Immediately save all active work to cloud and local storage"
                   className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold text-emerald-800 bg-emerald-50 hover:bg-emerald-100 active:bg-emerald-200 rounded border border-emerald-300 transition shadow-2xs cursor-pointer"
                 >
-                  <Save className="w-3.5 h-3.5 text-emerald-700" />
-                  Save Work
+                  {autoSaveStatus === 'saving' ? (
+                    <>
+                      <Loader2 className="w-3.5 h-3.5 text-emerald-700 animate-spin" />
+                      <span>Saving...</span>
+                    </>
+                  ) : (
+                    <>
+                      <Save className="w-3.5 h-3.5 text-emerald-700" />
+                      <span>Save Work</span>
+                    </>
+                  )}
                 </button>
 
                 <button
@@ -880,13 +915,7 @@ export const ScholarWorkspace: React.FC<ScholarWorkspaceProps> = ({
                         required
                       />
                       <span className="text-[11px] text-stone-500 mt-0.5 block">
-                        {editDate
-                          ? new Date(editDate).toLocaleDateString('en-GB', {
-                              day: 'numeric',
-                              month: 'long',
-                              year: 'numeric',
-                            })
-                          : 'Set evaluation date'}
+                        {editDate ? formatDisplayDate(editDate) : 'Set evaluation date'}
                       </span>
                     </div>
 
@@ -1003,13 +1032,7 @@ export const ScholarWorkspace: React.FC<ScholarWorkspaceProps> = ({
                   <div>
                     <span className="text-stone-500 block">RPC Date</span>
                     <span className="font-semibold text-stone-900 text-sm">
-                      {record.rpcDate
-                        ? new Date(record.rpcDate).toLocaleDateString('en-GB', {
-                            day: 'numeric',
-                            month: 'long',
-                            year: 'numeric',
-                          })
-                        : 'Not set'}
+                      {record.rpcDate ? formatDisplayDate(record.rpcDate) : 'Not set'}
                     </span>
                   </div>
 

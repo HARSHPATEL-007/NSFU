@@ -30,6 +30,7 @@ import {
 import {
   removeAllApprovedRpcRecords,
   deleteRpcRecord,
+  removeAllDemoData,
 } from '../services/dataService';
 
 interface OfficeDashboardProps {
@@ -60,6 +61,7 @@ export const OfficeDashboard: React.FC<OfficeDashboardProps> = ({
   const [isUnloadMenuOpen, setIsUnloadMenuOpen] = useState(false);
   const unloadMenuRef = useRef<HTMLDivElement>(null);
   const [showConfirmPurgeApproved, setShowConfirmPurgeApproved] = useState(false);
+  const [showConfirmPurgeDemo, setShowConfirmPurgeDemo] = useState(false);
   const [recordToDelete, setRecordToDelete] = useState<RpcRecord | null>(null);
   const [isPurging, setIsPurging] = useState(false);
   const [isDeleting, setIsDeleting] = useState(false);
@@ -131,6 +133,28 @@ export const OfficeDashboard: React.FC<OfficeDashboardProps> = ({
       setNotification({
         type: 'error',
         message: `Failed to remove approved records: ${err?.message || 'Unknown error'}`,
+      });
+    } finally {
+      setIsPurging(false);
+    }
+  };
+
+  const handlePurgeDemoData = async () => {
+    setIsPurging(true);
+    try {
+      const res = await removeAllDemoData();
+      if (onRefreshData) {
+        await onRefreshData();
+      }
+      setNotification({
+        type: 'success',
+        message: `Successfully removed demo data. All demo specimen records and scholars have been cleared.`,
+      });
+      setShowConfirmPurgeDemo(false);
+    } catch (err: any) {
+      setNotification({
+        type: 'error',
+        message: `Failed to remove demo data: ${err?.message || 'Unknown error'}`,
       });
     } finally {
       setIsPurging(false);
@@ -424,12 +448,25 @@ export const OfficeDashboard: React.FC<OfficeDashboardProps> = ({
                     type="button"
                     onClick={() => {
                       setIsUnloadMenuOpen(false);
+                      setShowConfirmPurgeDemo(true);
+                    }}
+                    id="btn-menu-remove-demo-data"
+                    className="w-full px-3 py-1.5 text-left hover:bg-rose-50 flex items-center gap-2 text-rose-700 hover:text-rose-900 transition cursor-pointer text-xs font-semibold"
+                  >
+                    <Trash2 className="w-3.5 h-3.5 text-rose-600 shrink-0" />
+                    <span>Remove Demo Data</span>
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setIsUnloadMenuOpen(false);
                       setShowConfirmPurgeApproved(true);
                     }}
                     id="btn-menu-remove-approved-data"
-                    className="w-full px-3 py-1.5 text-left hover:bg-rose-50 flex items-center gap-2 text-rose-600 hover:text-rose-800 transition cursor-pointer text-xs"
+                    className="w-full px-3 py-1.5 text-left hover:bg-stone-50 flex items-center gap-2 text-stone-600 hover:text-stone-900 transition cursor-pointer text-xs"
                   >
-                    <Trash2 className="w-3.5 h-3.5 text-rose-500 shrink-0" />
+                    <Trash2 className="w-3.5 h-3.5 text-stone-400 shrink-0" />
                     <span>Remove All Approved Data</span>
                   </button>
                 </div>
@@ -1181,6 +1218,50 @@ export const OfficeDashboard: React.FC<OfficeDashboardProps> = ({
                   ))}
                 </tbody>
               </table>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Confirmation Modal: Purge Demo Data */}
+      {showConfirmPurgeDemo && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 backdrop-blur-xs animate-in fade-in duration-200">
+          <div className="bg-white rounded-xl max-w-md w-full p-6 shadow-2xl border border-stone-200 space-y-4">
+            <div className="flex items-start gap-3">
+              <div className="p-2.5 bg-rose-100 text-rose-600 rounded-full shrink-0">
+                <Trash2 className="w-5 h-5" />
+              </div>
+              <div className="space-y-1">
+                <h3 className="text-base font-bold text-stone-900">Remove All Demo Data?</h3>
+                <p className="text-xs text-stone-600 leading-relaxed">
+                  This will completely remove all specimen demo records and demo scholars from local storage and the database, leaving the portal completely clean.
+                </p>
+              </div>
+            </div>
+
+            <div className="bg-rose-50 border border-rose-200 rounded-lg p-3 text-[11px] text-rose-800">
+              Your actual loaded Excel datasets and newly created scholars will remain intact.
+            </div>
+
+            <div className="flex items-center justify-end gap-2.5 pt-2">
+              <button
+                type="button"
+                onClick={() => setShowConfirmPurgeDemo(false)}
+                disabled={isPurging}
+                className="px-4 py-2 text-xs font-semibold text-stone-700 bg-white hover:bg-stone-100 border border-stone-300 rounded-md transition cursor-pointer"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={handlePurgeDemoData}
+                disabled={isPurging}
+                id="btn-confirm-purge-demo"
+                className="inline-flex items-center gap-1.5 px-4 py-2 text-xs font-semibold text-white bg-rose-600 hover:bg-rose-700 active:bg-rose-800 rounded-md shadow-xs transition cursor-pointer disabled:opacity-50"
+              >
+                <Trash2 className="w-3.5 h-3.5" />
+                <span>{isPurging ? 'Removing...' : 'Yes, Remove Demo Data'}</span>
+              </button>
             </div>
           </div>
         </div>

@@ -78,12 +78,12 @@ export const SDSRNavbar: React.FC<SDSRNavbarProps> = ({
                   }}
                   id="navbar-save-status-badge"
                   title="Click to immediately sync & save every work on portal"
-                  className="hidden sm:inline-flex items-center gap-1 text-[11px] font-medium text-emerald-800 bg-emerald-50 hover:bg-emerald-100 active:bg-emerald-200 px-2 py-0.5 rounded border border-emerald-300 transition cursor-pointer select-none"
+                  className="inline-flex items-center gap-1 text-[11px] font-medium text-emerald-800 bg-emerald-50 hover:bg-emerald-100 active:bg-emerald-200 px-2 py-0.5 rounded border border-emerald-300 transition cursor-pointer select-none"
                 >
                   {saveStatus === 'saving' ? (
                     <>
                       <Loader2 className="w-3 h-3 text-emerald-600 animate-spin" />
-                      <span>Saving to portal...</span>
+                      <span>Saving...</span>
                     </>
                   ) : (
                     <>

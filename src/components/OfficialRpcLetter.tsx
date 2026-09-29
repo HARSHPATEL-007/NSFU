@@ -71,9 +71,9 @@ export const OfficialRpcLetter: React.FC<OfficialRpcLetterProps> = ({
       const fallbackRecord: RpcRecord = rpcRecord || {
         id: 'export-docx',
         scholarId: 'temp',
-        scholarName: letterData.scholarName || 'Ms. Devanshi Lunagariya',
+        scholarName: letterData.scholarName || 'Ph.D. Scholar',
         enrollmentNo: 'DOCX_EXPORT',
-        school: letterData.schoolName || 'School of Pharmacy',
+        school: letterData.schoolName || 'School of Doctoral Studies and Research',
         rpcNumber: parseInt(letterData.rpcOrdinal) || 1,
         rpcDate: letterData.date || '10/06/2025',
         meetingTime: letterData.meetingTimeText || '12:00 Noon',
@@ -83,8 +83,8 @@ export const OfficialRpcLetter: React.FC<OfficialRpcLetterProps> = ({
         rpcMembers: {
           guide: {
             id: '1',
-            name: letterData.guideName || 'Prof. (Dr.) Manjunath Ghate',
-            designation: letterData.guideDesignation || 'Professor, SPH',
+            name: letterData.guideName || 'Research Supervisor',
+            designation: letterData.guideDesignation || 'Professor',
             department: '',
             schoolOrInstitution: letterData.guideSchool || 'NFSU',
             location: 'Gandhinagar',
@@ -176,13 +176,13 @@ export const OfficialRpcLetter: React.FC<OfficialRpcLetterProps> = ({
   };
 
   const ordinalText = formatOrdinal(letterData.rpcOrdinal);
-  const scholarName = letterData.scholarName || 'Ms. Devanshi Lunagariya';
-  const schoolName = letterData.schoolName || 'School of Pharmacy';
+  const scholarName = letterData.scholarName || 'Ph.D. Scholar';
+  const schoolName = letterData.schoolName || 'School of Doctoral Studies and Research';
   const meetingDate = letterData.meetingDateText || '10th June, 2025';
   const meetingTime = letterData.meetingTimeText || '12:00 Noon';
   const rawMode = (letterData.meetingModeText || 'online mode').replace(/\s*mode$/i, '').trim() || 'online';
-  const guideName = letterData.guideName || 'Prof. (Dr.) Manjunath Ghate';
-  const guideDesignation = letterData.guideDesignation || 'Professor, SPH';
+  const guideName = letterData.guideName || 'Research Supervisor';
+  const guideDesignation = letterData.guideDesignation || 'Professor';
 
   return (
     <div className="flex flex-col items-center w-full">

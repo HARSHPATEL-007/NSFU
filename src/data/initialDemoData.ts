@@ -144,62 +144,7 @@ export const DEMO_MEMBERS: RpcMember[] = [
   },
 ];
 
-export const DEMO_SCHOLARS: Scholar[] = [
-  {
-    id: 'sch-devanshi',
-    name: 'Ms. Devanshi Lunagariya',
-    enrollmentNo: '240114002015',
-    school: 'School of Pharmacy',
-    department: 'Pharmaceutical Sciences & Drug Delivery Systems',
-    guideName: 'Prof. (Dr.) Manjunath Ghate',
-    guideDesignation: 'Professor, SPH',
-    guideEmail: 'manjunath.ghate@nfsu.ac.in',
-    guideSchool: 'School of Pharmacy',
-    registrationDate: '2024-01-15',
-    researchTopic: 'Formulation and Evaluation of Novel Targeted Nanocarriers for Enhanced Therapeutic Efficacy in Preclinical Models',
-    contactDetails: {
-      email: 'devanshi.lunagariya@nfsu.ac.in',
-      phone: '+91-9876543220',
-      address: 'SPH Research Lab, NFSU Gandhinagar Campus 382007',
-    },
-    currentRpcNo: 1,
-    status: 'ACTIVE',
-    academicDetails: {
-      qualifyingDegree: 'M.Pharm (Pharmaceutics)',
-      university: 'National Forensic Sciences University',
-      yearOfPassing: '2023',
-      category: 'Regular Full-Time',
-      fellowship: 'Institutional Research Fellowship',
-    },
-  },
-  {
-    id: 'sch-richard',
-    name: 'RICHARD CHEREHANI KASHINDYE',
-    enrollmentNo: '240112006037',
-    school: 'School of Forensic Science',
-    department: 'Forensic Chemistry and Toxicology',
-    guideName: 'Dr. Rakesh Yadav',
-    guideDesignation: 'Associate Professor, SFS',
-    guideEmail: 'rakesh.yadav@nfsu.ac.in',
-    guideSchool: 'School of Forensic Science',
-    registrationDate: '2023-08-14',
-    researchTopic: 'Novel Analytical Frameworks for Detection and Profiling of Emerging Synthetic Cannabinoids and Opioids using Advanced Spectrometric Tools',
-    contactDetails: {
-      email: 'richard.kashindye@nfsu.ac.in',
-      phone: '+91-9876543210',
-      address: 'Hostel Block B, NFSU Sector-9, Gandhinagar 382007',
-    },
-    currentRpcNo: 1,
-    status: 'ACTIVE',
-    academicDetails: {
-      qualifyingDegree: 'M.Sc. Forensic Science',
-      university: 'National Forensic Sciences University',
-      yearOfPassing: '2023',
-      category: 'International Sponsored',
-      fellowship: 'ICCR Fellowship',
-    },
-  },
-];
+export const DEMO_SCHOLARS: Scholar[] = [];
 
 // Helper to construct official letter data matching Screenshot 2026-09-23 131832.png
 export function createLetterData(
@@ -244,64 +189,6 @@ export function createLetterData(
   };
 }
 
-export const DEMO_RPC_RECORDS: RpcRecord[] = [
-  {
-    id: 'rpc-devanshi-1',
-    scholarId: 'sch-devanshi',
-    scholarName: 'Ms. Devanshi Lunagariya',
-    enrollmentNo: '240114002015',
-    school: 'School of Pharmacy',
-    rpcNumber: 1,
-    rpcDate: '2025-06-10',
-    meetingTime: '12:00 Noon',
-    meetingMode: 'ONLINE',
-    venue: 'Google Meet / Online Webex Portal',
-    status: 'PENDING_DEAN_APPROVAL',
-    requestDetails: 'Official 1st Research Progress Committee (RPC) Meeting Notification for Ph.D. Scholar Ms. Devanshi Lunagariya under School of Pharmacy.',
-    rpcMembers: {
-      guide: DEMO_MEMBERS[0], // Prof. Manjunath Ghate
-      internalExpert: DEMO_MEMBERS[2], // Dr. Bhoomika Patel
-      externalExpert1: DEMO_MEMBERS[4], // Dr. Dhiraj Bhatia
-      externalExpert2: DEMO_MEMBERS[6], // Dr. Prakash Jha
-    },
-    letterData: {
-      refNo: 'NFSU/SDSR/RPC/01/25',
-      date: '10/06/2025',
-      schoolName: 'School of Pharmacy',
-      schoolCampus: 'Gandhinagr',
-      guideName: 'Prof. (Dr.) Manjunath Ghate',
-      guideDesignation: 'Professor, SPH',
-      guideSchool: 'School of Pharmacy',
-      internalExpertName: 'Dr. Bhoomika Patel',
-      internalExpertDesignation: 'Dean (I/C), SPH',
-      internalExpertDept: '',
-      internalExpertCampus: 'NFSU, Gandhinagar',
-      externalExpert1Name: 'Dr. Dhiraj Bhatia',
-      externalExpert1Designation: 'Associate Professor & INYAS-INSA Member',
-      externalExpert1Dept: 'Department of Biological Science and Engineering',
-      externalExpert1Inst: 'Indian Institute of Technology Gandhinagar',
-      externalExpert1City: 'Gujarat',
-      externalExpert2Name: 'Dr. Prakash Jha',
-      externalExpert2Designation: 'Professor & Dean',
-      externalExpert2Dept: 'School of Applied Material Science',
-      externalExpert2Inst: 'Central University of Gujarat',
-      externalExpert2City: 'Gandhinagar',
-      subject: '1ˢᵗ Meeting of the Research Progress Committee (RPC) for Ph.D. Scholar Registered under Prof. (Dr.) Manjunath Ghate, Professor, SPH, NFSU.',
-      meetingDateText: '10ᵗʰ June, 2025',
-      meetingTimeText: '12:00 Noon',
-      meetingModeText: 'online mode',
-      meetingVenue: 'online mode',
-      scholarName: 'Ms. Devanshi Lunagariya',
-      rpcOrdinal: '1ˢᵗ',
-      copyTo: ['Associate Dean- SDSR'],
-    },
-    draftDocumentReference: 'NFSU/SDSR/RPC/01/25',
-    createdBy: 'office@nfsu.ac.in',
-    createdAt: '2025-06-01T09:00:00Z',
-    forwardedBy: 'office@nfsu.ac.in',
-    forwardedAt: '2025-06-02T10:00:00Z',
-    version: 1,
-  },
-];
+export const DEMO_RPC_RECORDS: RpcRecord[] = [];
 
 export const DEMO_AUDIT_LOGS: AuditLog[] = [];

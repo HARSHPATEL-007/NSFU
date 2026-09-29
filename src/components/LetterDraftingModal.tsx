@@ -2,6 +2,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import { RpcRecord, OfficialLetterData, UserProfile } from '../types';
 import { OfficialRpcLetter } from './OfficialRpcLetter';
 import { saveDraftLetter, validateForForwarding } from '../services/dataService';
+import { formatDisplayDate } from '../utils/dateUtils';
 import { X, Save, Send, Download, Check, AlertCircle, Edit3, Eye, Loader2, Printer, FileDown, CheckCircle2 } from 'lucide-react';
 import { downloadLetterElementAsPdf, generateLetterPdfFilename } from '../utils/pdfExport';
 import { downloadApprovedRpcLetterDocx } from '../utils/docxExport';
@@ -12,7 +13,7 @@ interface LetterDraftingModalProps {
   record: RpcRecord;
   currentUser: UserProfile;
   onSaveSuccess: (updatedRecord: RpcRecord) => void;
-  onForwardToDeanClick: () => void;
+  onForwardToDeanClick: (latestRecord?: RpcRecord) => void;
 }
 
 export const LetterDraftingModal: React.FC<LetterDraftingModalProps> = ({
@@ -48,7 +49,7 @@ export const LetterDraftingModal: React.FC<LetterDraftingModalProps> = ({
       externalExpert2Inst: record.rpcMembers?.externalExpert2?.schoolOrInstitution || '',
       externalExpert2City: record.rpcMembers?.externalExpert2?.location || '',
       subject: `${record.rpcNumber === 1 ? '1st' : record.rpcNumber === 2 ? '2nd' : record.rpcNumber === 3 ? '3rd' : `${record.rpcNumber}th`} Meeting of the Research Progress Committee (RPC) for Ph.D. Scholar Registered under ${record.rpcMembers?.guide?.name || ''}, ${record.rpcMembers?.guide?.designation || ''}, NFSU.`,
-      meetingDateText: record.rpcDate ? new Date(record.rpcDate).toLocaleDateString('en-GB', { day: 'numeric', month: 'long', year: 'numeric' }) : 'To be confirmed',
+      meetingDateText: record.rpcDate ? formatDisplayDate(record.rpcDate) : 'To be confirmed',
       meetingTimeText: record.meetingTime || '11:00 AM',
       meetingModeText: record.meetingMode === 'ONLINE' ? 'online mode' : record.meetingMode === 'HYBRID' ? 'hybrid mode' : 'physical mode',
       meetingVenue: record.venue || '',
@@ -69,10 +70,10 @@ export const LetterDraftingModal: React.FC<LetterDraftingModalProps> = ({
   const [lastAutoSavedAt, setLastAutoSavedAt] = useState<string | null>(null);
 
   // Save helper to ensure any pending changes are immediately flushed
-  const flushSave = async (dataToSave = formData) => {
+  const flushSave = async (dataToSave = formData, isAutoSave = true) => {
     if (isLocked) return;
     try {
-      const updated = await saveDraftLetter(record.id, dataToSave, currentUser);
+      const updated = await saveDraftLetter(record.id, dataToSave, currentUser, isAutoSave);
       onSaveSuccess(updated);
       setLastAutoSavedAt(
         new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' })
@@ -100,7 +101,7 @@ export const LetterDraftingModal: React.FC<LetterDraftingModalProps> = ({
   }, [formData, isOpen, isLocked, record.id, currentUser]);
 
   const handleSafeClose = async () => {
-    await flushSave(formData);
+    await flushSave(formData, false);
     onClose();
   };
 
@@ -168,7 +169,7 @@ export const LetterDraftingModal: React.FC<LetterDraftingModalProps> = ({
     setSaving(true);
     setErrorMessage('');
     try {
-      const updated = await saveDraftLetter(record.id, formData, currentUser);
+      const updated = await saveDraftLetter(record.id, formData, currentUser, false);
       onSaveSuccess(updated);
       setSaveSuccessNotice(true);
       setTimeout(() => setSaveSuccessNotice(false), 3000);
@@ -184,14 +185,15 @@ export const LetterDraftingModal: React.FC<LetterDraftingModalProps> = ({
 
   const handleForwardClick = async () => {
     // Save draft first so the record has the exact latest form data
-    await flushSave(formData);
+    const updated = await flushSave(formData, false);
+    const recToValidate = updated || { ...record, letterData: formData };
     // Validate mandatory fields
-    const val = validateForForwarding({ ...record, letterData: formData });
+    const val = validateForForwarding(recToValidate);
     if (!val.isValid) {
       setErrorMessage(`Cannot forward to Dean. Please complete: ${val.errors.join('; ')}`);
       return;
     }
-    onForwardToDeanClick();
+    onForwardToDeanClick(recToValidate);
   };
 
   return (

@@ -125,12 +125,12 @@ export async function downloadApprovedRpcLetterDocx(
     externalExpert2Dept: record.rpcMembers?.externalExpert2?.department || 'School of Applied Material Science',
     externalExpert2Inst: record.rpcMembers?.externalExpert2?.schoolOrInstitution || 'Central University of Gujarat',
     externalExpert2City: record.rpcMembers?.externalExpert2?.location || 'Gujarat',
-    subject: `1st Meeting of the Research Progress Committee (RPC) for Ph.D. Scholar Registered under ${record.rpcMembers?.guide?.name || 'Prof. (Dr.) Manjunath Ghate'}, ${record.rpcMembers?.guide?.designation || 'Professor, SPH'}, NFSU.`,
+    subject: `1st Meeting of the Research Progress Committee (RPC) for Ph.D. Scholar Registered under ${record.rpcMembers?.guide?.name || 'Research Supervisor'}, ${record.rpcMembers?.guide?.designation || 'Professor'}, NFSU.`,
     meetingDateText: record.rpcDate || '10th June, 2025',
     meetingTimeText: record.meetingTime || '12:00 Noon',
     meetingModeText: record.meetingMode?.toLowerCase() || 'online',
     meetingVenue: record.venue || '',
-    scholarName: record.scholarName || 'Ms. Devanshi Lunagariya',
+    scholarName: record.scholarName || 'Ph.D. Scholar',
     rpcOrdinal: String(record.rpcNumber || '1'),
   };
 

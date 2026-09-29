@@ -1547,6 +1547,15 @@ export function getLoadedExcelRosterCandidates(existingScholars: Scholar[]): Exc
         .trim()
         .toLowerCase()
         .replace(/^dr\.\s*|^mr\.\s*|^ms\.\s*|^mrs\.\s*/i, '');
+      if (
+        normName.includes('devanshi') ||
+        normName.includes('richard') ||
+        normEnroll === '240114002015' ||
+        normEnroll === '240112006037' ||
+        normEnroll === '240112006033'
+      ) {
+        return;
+      }
       const key = `${normEnroll || normName}-rpc-${r.rpcNumber}`;
       if (seenKeys.has(key)) return;
       seenKeys.add(key);
@@ -1589,6 +1598,15 @@ export function getLoadedExcelRosterCandidates(existingScholars: Scholar[]): Exc
         .trim()
         .toLowerCase()
         .replace(/^dr\.\s*|^mr\.\s*|^ms\.\s*|^mrs\.\s*/i, '');
+      if (
+        normName.includes('devanshi') ||
+        normName.includes('richard') ||
+        normEnroll === '240114002015' ||
+        normEnroll === '240112006037' ||
+        normEnroll === '240112006033'
+      ) {
+        return;
+      }
       const key = `${normEnroll || normName}-rpc-${s.currentRpcNo || 1}`;
       if (seenKeys.has(key)) return;
       seenKeys.add(key);
