@@ -108,23 +108,23 @@ export async function downloadApprovedRpcLetterDocx(
     date: record.rpcDate || '10/06/2025',
     schoolName: record.school || 'School of Pharmacy',
     schoolCampus: 'Gandhinagar',
-    guideName: record.rpcMembers?.guide?.name || 'Prof. (Dr.) Manjunath Ghate',
-    guideDesignation: record.rpcMembers?.guide?.designation || 'Professor, SPH',
-    guideSchool: record.rpcMembers?.guide?.schoolOrInstitution || 'NFSU',
-    internalExpertName: record.rpcMembers?.internalExpert?.name || 'Dr. Bhoomika Patel',
-    internalExpertDesignation: record.rpcMembers?.internalExpert?.designation || 'Dean (I/C), SPH',
+    guideName: record.rpcMembers?.guide?.name || '',
+    guideDesignation: record.rpcMembers?.guide?.designation || '',
+    guideSchool: record.rpcMembers?.guide?.schoolOrInstitution || '',
+    internalExpertName: record.rpcMembers?.internalExpert?.name || '',
+    internalExpertDesignation: record.rpcMembers?.internalExpert?.designation || '',
     internalExpertDept: record.rpcMembers?.internalExpert?.department || '',
-    internalExpertCampus: record.rpcMembers?.internalExpert?.location || 'Gandhinagar',
-    externalExpert1Name: record.rpcMembers?.externalExpert1?.name || 'Dr. Dhiraj Bhatia',
-    externalExpert1Designation: record.rpcMembers?.externalExpert1?.designation || 'Associate Professor & INYAS-INSA Member',
-    externalExpert1Dept: record.rpcMembers?.externalExpert1?.department || 'Department of Biological Science and Engineering',
-    externalExpert1Inst: record.rpcMembers?.externalExpert1?.schoolOrInstitution || 'Indian Institute of Technology Gandhinagar',
-    externalExpert1City: record.rpcMembers?.externalExpert1?.location || 'Gujarat',
-    externalExpert2Name: record.rpcMembers?.externalExpert2?.name || 'Dr. Prakash Jha',
-    externalExpert2Designation: record.rpcMembers?.externalExpert2?.designation || 'Professor & Dean',
-    externalExpert2Dept: record.rpcMembers?.externalExpert2?.department || 'School of Applied Material Science',
-    externalExpert2Inst: record.rpcMembers?.externalExpert2?.schoolOrInstitution || 'Central University of Gujarat',
-    externalExpert2City: record.rpcMembers?.externalExpert2?.location || 'Gujarat',
+    internalExpertCampus: record.rpcMembers?.internalExpert?.location || '',
+    externalExpert1Name: record.rpcMembers?.externalExpert1?.name || '',
+    externalExpert1Designation: record.rpcMembers?.externalExpert1?.designation || '',
+    externalExpert1Dept: record.rpcMembers?.externalExpert1?.department || '',
+    externalExpert1Inst: record.rpcMembers?.externalExpert1?.schoolOrInstitution || '',
+    externalExpert1City: record.rpcMembers?.externalExpert1?.location || '',
+    externalExpert2Name: record.rpcMembers?.externalExpert2?.name || '',
+    externalExpert2Designation: record.rpcMembers?.externalExpert2?.designation || '',
+    externalExpert2Dept: record.rpcMembers?.externalExpert2?.department || '',
+    externalExpert2Inst: record.rpcMembers?.externalExpert2?.schoolOrInstitution || '',
+    externalExpert2City: record.rpcMembers?.externalExpert2?.location || '',
     subject: `1st Meeting of the Research Progress Committee (RPC) for Ph.D. Scholar Registered under ${record.rpcMembers?.guide?.name || 'Research Supervisor'}, ${record.rpcMembers?.guide?.designation || 'Professor'}, NFSU.`,
     meetingDateText: record.rpcDate || '10th June, 2025',
     meetingTimeText: record.meetingTime || '12:00 Noon',
@@ -429,133 +429,179 @@ export async function downloadApprovedRpcLetterDocx(
     ? `, ${letterData.internalExpertCampus.replace(/^NFSU,\s*/i, '')}`
     : ', Gandhinagar';
 
-  docChildren.push(
-    new Paragraph({
-      spacing: { after: 25 },
-      indent: { left: 450, hanging: 240 },
-      children: [
-        new TextRun({
-          text: `3.\t${letterData.internalExpertName || 'Dr. Bhoomika Patel'} (Internal Expert Member).`,
-          bold: true,
-          size: 20,
-          font: 'Times New Roman',
-        }),
-        new TextRun({
-          text: letterData.internalExpertDesignation || 'Dean (I/C), SPH',
-          break: 1,
-          bold: true,
-          size: 20,
-          font: 'Times New Roman',
-        }),
-        new TextRun({
-          text: `${letterData.internalExpertDept ? `${letterData.internalExpertDept}, ` : ''}NFSU${internalExpertCampusStr}`,
-          break: 1,
-          bold: true,
-          size: 20,
-          font: 'Times New Roman',
-        }),
-      ],
-    })
-  );
+  // Dynamic Member Numbering (starts at 3 after Dean and Guide)
+  let memberIndex = 3;
 
-  // Member 4: External Expert 1
-  docChildren.push(
-    new Paragraph({
-      spacing: { after: 25 },
-      indent: { left: 450, hanging: 240 },
-      children: [
-        new TextRun({
-          text: `4.\t${letterData.externalExpert1Name || 'Dr. Dhiraj Bhatia'} (External Expert Member)`,
-          bold: true,
-          size: 20,
-          font: 'Times New Roman',
-        }),
-        new TextRun({
-          text: letterData.externalExpert1Designation || 'Associate Professor & INYAS-INSA Member',
-          break: 1,
-          bold: true,
-          size: 20,
-          font: 'Times New Roman',
-        }),
-        new TextRun({
-          text: letterData.externalExpert1Dept || 'Department of Biological Science and Engineering',
-          break: 1,
-          bold: true,
-          size: 20,
-          font: 'Times New Roman',
-        }),
-        new TextRun({
-          text: letterData.externalExpert1Inst || 'Indian Institute of Technology Gandhinagar',
-          break: 1,
-          bold: true,
-          size: 20,
-          font: 'Times New Roman',
-        }),
-        new TextRun({
-          text: letterData.externalExpert1City || 'Gujarat',
-          break: 1,
-          bold: true,
-          size: 20,
-          font: 'Times New Roman',
-        }),
-      ],
-    })
-  );
-
-  // Member 5: External Expert 2
-  const member5Runs = [
-    new TextRun({
-      text: `5.\t${letterData.externalExpert2Name || 'Dr. Prakash Jha'} (External Expert Member).`,
-      bold: true,
-      size: 20,
-      font: 'Times New Roman',
-    }),
-    new TextRun({
-      text: letterData.externalExpert2Designation || 'Professor & Dean',
-      break: 1,
-      bold: true,
-      size: 20,
-      font: 'Times New Roman',
-    }),
-    new TextRun({
-      text: letterData.externalExpert2Dept || 'School of Applied Material Science',
-      break: 1,
-      bold: true,
-      size: 20,
-      font: 'Times New Roman',
-    }),
-    new TextRun({
-      text: letterData.externalExpert2Inst || 'Central University of Gujarat',
-      break: 1,
-      bold: true,
-      size: 20,
-      font: 'Times New Roman',
-    }),
-  ];
-
-  if (
-    letterData.externalExpert2City &&
-    letterData.externalExpert2City !== 'Gandhinagar' &&
-    letterData.externalExpert2City !== 'Gujarat'
-  ) {
-    member5Runs.push(
+  // Member 3: Internal Expert Member
+  if (letterData.internalExpertName) {
+    const member3Runs = [
       new TextRun({
-        text: letterData.externalExpert2City,
+        text: `${memberIndex}.\t${letterData.internalExpertName} (Internal Expert Member).`,
+        bold: true,
+        size: 20,
+        font: 'Times New Roman',
+      }),
+    ];
+    if (letterData.internalExpertDesignation) {
+      member3Runs.push(
+        new TextRun({
+          text: letterData.internalExpertDesignation,
+          break: 1,
+          bold: true,
+          size: 20,
+          font: 'Times New Roman',
+        })
+      );
+    }
+    member3Runs.push(
+      new TextRun({
+        text: `${letterData.internalExpertDept ? `${letterData.internalExpertDept}, ` : ''}NFSU${internalExpertCampusStr}`,
         break: 1,
         bold: true,
         size: 20,
         font: 'Times New Roman',
       })
     );
+    docChildren.push(
+      new Paragraph({
+        spacing: { after: 25 },
+        indent: { left: 450, hanging: 240 },
+        children: member3Runs,
+      })
+    );
+    memberIndex++;
   }
 
-  docChildren.push(
-    new Paragraph({
-      spacing: { after: 40 },
-      indent: { left: 450, hanging: 240 },
-      children: member5Runs,
-    })
-  );
+  // Member 4: External Expert 1
+  if (letterData.externalExpert1Name) {
+    const member4Runs = [
+      new TextRun({
+        text: `${memberIndex}.\t${letterData.externalExpert1Name} (External Expert Member)`,
+        bold: true,
+        size: 20,
+        font: 'Times New Roman',
+      }),
+    ];
+    if (letterData.externalExpert1Designation) {
+      member4Runs.push(
+        new TextRun({
+          text: letterData.externalExpert1Designation,
+          break: 1,
+          bold: true,
+          size: 20,
+          font: 'Times New Roman',
+        })
+      );
+    }
+    if (letterData.externalExpert1Dept) {
+      member4Runs.push(
+        new TextRun({
+          text: letterData.externalExpert1Dept,
+          break: 1,
+          bold: true,
+          size: 20,
+          font: 'Times New Roman',
+        })
+      );
+    }
+    if (letterData.externalExpert1Inst) {
+      member4Runs.push(
+        new TextRun({
+          text: letterData.externalExpert1Inst,
+          break: 1,
+          bold: true,
+          size: 20,
+          font: 'Times New Roman',
+        })
+      );
+    }
+    if (letterData.externalExpert1City) {
+      member4Runs.push(
+        new TextRun({
+          text: letterData.externalExpert1City,
+          break: 1,
+          bold: true,
+          size: 20,
+          font: 'Times New Roman',
+        })
+      );
+    }
+    docChildren.push(
+      new Paragraph({
+        spacing: { after: 25 },
+        indent: { left: 450, hanging: 240 },
+        children: member4Runs,
+      })
+    );
+    memberIndex++;
+  }
+
+  // Member 5: External Expert 2
+  if (letterData.externalExpert2Name) {
+    const member5Runs = [
+      new TextRun({
+        text: `${memberIndex}.\t${letterData.externalExpert2Name} (External Expert Member).`,
+        bold: true,
+        size: 20,
+        font: 'Times New Roman',
+      }),
+    ];
+    if (letterData.externalExpert2Designation) {
+      member5Runs.push(
+        new TextRun({
+          text: letterData.externalExpert2Designation,
+          break: 1,
+          bold: true,
+          size: 20,
+          font: 'Times New Roman',
+        })
+      );
+    }
+    if (letterData.externalExpert2Dept) {
+      member5Runs.push(
+        new TextRun({
+          text: letterData.externalExpert2Dept,
+          break: 1,
+          bold: true,
+          size: 20,
+          font: 'Times New Roman',
+        })
+      );
+    }
+    if (letterData.externalExpert2Inst) {
+      member5Runs.push(
+        new TextRun({
+          text: letterData.externalExpert2Inst,
+          break: 1,
+          bold: true,
+          size: 20,
+          font: 'Times New Roman',
+        })
+      );
+    }
+    if (
+      letterData.externalExpert2City &&
+      letterData.externalExpert2City !== 'Gandhinagar' &&
+      letterData.externalExpert2City !== 'Gujarat'
+    ) {
+      member5Runs.push(
+        new TextRun({
+          text: letterData.externalExpert2City,
+          break: 1,
+          bold: true,
+          size: 20,
+          font: 'Times New Roman',
+        })
+      );
+    }
+    docChildren.push(
+      new Paragraph({
+        spacing: { after: 40 },
+        indent: { left: 450, hanging: 240 },
+        children: member5Runs,
+      })
+    );
+  }
 
   // ==========================================
   // 4. Subject Line

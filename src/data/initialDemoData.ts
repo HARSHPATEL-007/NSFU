@@ -1,4 +1,5 @@
 import { Scholar, RpcMember, RpcRecord, UserProfile, AuditLog, DocumentSnapshot } from '../types';
+import { getOrdinalText } from '../utils/dateUtils';
 
 export const DEMO_USERS: UserProfile[] = [
   {
@@ -153,31 +154,38 @@ export function createLetterData(
   meetingDate: string = '10ᵗʰ June, 2025',
   meetingTime: string = '12:00 Noon',
   meetingMode: string = 'online mode',
-  venue: string = 'online mode'
+  venue: string = 'online mode',
+  rpcMembers?: {
+    guide?: RpcMember;
+    internalExpert?: RpcMember;
+    externalExpert1?: RpcMember;
+    externalExpert2?: RpcMember;
+  }
 ) {
-  const ordinal = rpcNumber === 1 ? '1ˢᵗ' : rpcNumber === 2 ? '2ⁿᵈ' : rpcNumber === 3 ? '3ʳᵈ' : `${rpcNumber}ᵗʰ`;
+  const ordinal = getOrdinalText(rpcNumber);
+  const refNum = rpcNumber < 10 ? `0${rpcNumber}` : `${rpcNumber}`;
   return {
-    refNo: `NFSU/SDSR/RPC/0${rpcNumber}/25`,
-    date: '10/06/2025',
+    refNo: `NFSU/SDSR/RPC/${refNum}/25`,
+    date: new Date().toLocaleDateString('en-GB'),
     schoolName: scholar.school,
     schoolCampus: 'Gandhinagr',
-    guideName: scholar.guideName,
-    guideDesignation: scholar.guideDesignation,
-    guideSchool: scholar.guideSchool,
-    internalExpertName: 'Dr. Bhoomika Patel',
-    internalExpertDesignation: 'Dean (I/C), SPH',
-    internalExpertDept: '',
-    internalExpertCampus: 'NFSU, Gandhinagar',
-    externalExpert1Name: 'Dr. Dhiraj Bhatia',
-    externalExpert1Designation: 'Associate Professor & INYAS-INSA Member',
-    externalExpert1Dept: 'Department of Biological Science and Engineering',
-    externalExpert1Inst: 'Indian Institute of Technology Gandhinagar',
-    externalExpert1City: 'Gujarat',
-    externalExpert2Name: 'Dr. Prakash Jha',
-    externalExpert2Designation: 'Professor & Dean',
-    externalExpert2Dept: 'School of Applied Material Science',
-    externalExpert2Inst: 'Central University of Gujarat',
-    externalExpert2City: 'Gandhinagar',
+    guideName: rpcMembers?.guide?.name || scholar.guideName,
+    guideDesignation: rpcMembers?.guide?.designation || scholar.guideDesignation,
+    guideSchool: rpcMembers?.guide?.schoolOrInstitution || scholar.guideSchool,
+    internalExpertName: rpcMembers?.internalExpert?.name || 'Dr. Bhoomika Patel',
+    internalExpertDesignation: rpcMembers?.internalExpert?.designation || rpcMembers?.internalExpert?.addressLine1 || 'Dean (I/C), SPH',
+    internalExpertDept: rpcMembers?.internalExpert?.department || rpcMembers?.internalExpert?.addressLine2 || '',
+    internalExpertCampus: rpcMembers?.internalExpert?.location || rpcMembers?.internalExpert?.addressLine3 || 'NFSU, Gandhinagar',
+    externalExpert1Name: rpcMembers?.externalExpert1?.name || 'Dr. Dhiraj Bhatia',
+    externalExpert1Designation: rpcMembers?.externalExpert1?.designation || rpcMembers?.externalExpert1?.addressLine1 || 'Associate Professor & INYAS-INSA Member',
+    externalExpert1Dept: rpcMembers?.externalExpert1?.department || rpcMembers?.externalExpert1?.addressLine2 || 'Department of Biological Science and Engineering',
+    externalExpert1Inst: rpcMembers?.externalExpert1?.schoolOrInstitution || rpcMembers?.externalExpert1?.addressLine2 || 'Indian Institute of Technology Gandhinagar',
+    externalExpert1City: rpcMembers?.externalExpert1?.location || rpcMembers?.externalExpert1?.addressLine3 || 'Gujarat',
+    externalExpert2Name: rpcMembers?.externalExpert2?.name || 'Dr. Prakash Jha',
+    externalExpert2Designation: rpcMembers?.externalExpert2?.designation || rpcMembers?.externalExpert2?.addressLine1 || 'Professor & Dean',
+    externalExpert2Dept: rpcMembers?.externalExpert2?.department || rpcMembers?.externalExpert2?.addressLine2 || 'School of Applied Material Science',
+    externalExpert2Inst: rpcMembers?.externalExpert2?.schoolOrInstitution || rpcMembers?.externalExpert2?.addressLine2 || 'Central University of Gujarat',
+    externalExpert2City: rpcMembers?.externalExpert2?.location || rpcMembers?.externalExpert2?.addressLine3 || 'Gandhinagar',
     subject: `${ordinal} Meeting of the Research Progress Committee (RPC) for Ph.D. Scholar Registered under ${scholar.guideName}, ${scholar.guideDesignation}, NFSU.`,
     meetingDateText: meetingDate,
     meetingTimeText: meetingTime,

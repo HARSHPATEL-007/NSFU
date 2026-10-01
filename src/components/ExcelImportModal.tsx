@@ -87,16 +87,15 @@ export const ExcelImportModal: React.FC<ExcelImportModalProps> = ({
   const [parseResult, setParseResult] = useState<ExcelParseResult | null>(null);
   const [parseError, setParseError] = useState<string | null>(null);
 
-  // Keep shared storage updated whenever sheets/files change
-  useEffect(() => {
-    setSharedLoadedData(loadedFiles, loadedSheets);
-  }, [loadedFiles, loadedSheets]);
-
   // Listen to updates from other components (such as NewRpcModal loading an Excel file)
   useEffect(() => {
-    const handleSharedUpdate = () => {
-      setLoadedFiles(getSharedLoadedFiles());
-      setLoadedSheets(getSharedLoadedSheets());
+    const handleSharedUpdate = (e: any) => {
+      // Avoid circular ping-pong if this modal triggered the update
+      if (e?.detail?.source === 'EXCEL_IMPORT_MODAL') return;
+      const latestFiles = getSharedLoadedFiles();
+      const latestSheets = getSharedLoadedSheets();
+      setLoadedFiles(latestFiles);
+      setLoadedSheets(latestSheets);
     };
     window.addEventListener('nfsu-excel-data-updated', handleSharedUpdate);
     return () => window.removeEventListener('nfsu-excel-data-updated', handleSharedUpdate);
@@ -116,12 +115,13 @@ export const ExcelImportModal: React.FC<ExcelImportModalProps> = ({
   const [meetingTime, setMeetingTime] = useState('11:00 AM IST');
   const [meetingMode, setMeetingMode] = useState<'ONLINE' | 'OFFLINE' | 'HYBRID'>('ONLINE');
   const [meetingVenue, setMeetingVenue] = useState('SDSR Board Room / Google Meet: meet.google.com/nfs-sdsr-rpc');
-  const [internalExpert, setInternalExpert] = useState('Dr. Bhoomika Patel');
-  const [externalExpert1, setExternalExpert1] = useState('Dr. Dhiraj Bhatia');
-  const [externalExpert2, setExternalExpert2] = useState('Prof. (Dr.) Sanjay K. Jain');
+  const [internalExpert, setInternalExpert] = useState('');
+  const [externalExpert1, setExternalExpert1] = useState('');
+  const [externalExpert2, setExternalExpert2] = useState('');
   const [isProcessingLetter, setIsProcessingLetter] = useState(false);
   const [generatedLetterRecord, setGeneratedLetterRecord] = useState<RpcRecord | null>(null);
   const [letterSuccessNotice, setLetterSuccessNotice] = useState<string | null>(null);
+  const [actionNotice, setActionNotice] = useState<{ message: string; type: 'success' | 'error' } | null>(null);
 
   // Bulk operation status
   const [isCommittingAll, setIsCommittingAll] = useState(false);
@@ -225,15 +225,18 @@ export const ExcelImportModal: React.FC<ExcelImportModalProps> = ({
 
   // Granular Unload Handler: Unload / Remove an individual sheet
   const handleUnloadSingleSheet = (sheetId: string) => {
-    setLoadedSheets((prev) => prev.filter((s) => s.id !== sheetId));
-    setLoadedFiles((prevFiles) =>
-      prevFiles
-        .map((f) => ({
-          ...f,
-          sheets: f.sheets.filter((s) => s.id !== sheetId),
-        }))
-        .filter((f) => f.sheets.length > 0)
-    );
+    const updatedSheets = loadedSheets.filter((s) => s.id !== sheetId);
+    const updatedFiles = loadedFiles
+      .map((f) => ({
+        ...f,
+        sheets: f.sheets.filter((s) => s.id !== sheetId),
+      }))
+      .filter((f) => f.sheets.length > 0);
+
+    setLoadedSheets(updatedSheets);
+    setLoadedFiles(updatedFiles);
+    setSharedLoadedData(updatedFiles, updatedSheets, 'EXCEL_IMPORT_MODAL');
+
     if (selectedSheetFilter === sheetId) {
       setSelectedSheetFilter('ALL');
     }
@@ -241,15 +244,20 @@ export const ExcelImportModal: React.FC<ExcelImportModalProps> = ({
 
   // Toggle Sheet Active/Inactive (loaded vs unloaded state)
   const handleToggleSheet = (sheetId: string) => {
-    setLoadedSheets((prev) =>
-      prev.map((s) => (s.id === sheetId ? { ...s, isLoaded: !s.isLoaded } : s))
+    const updatedSheets = loadedSheets.map((s) =>
+      s.id === sheetId ? { ...s, isLoaded: !s.isLoaded } : s
     );
+    setLoadedSheets(updatedSheets);
+    setSharedLoadedData(loadedFiles, updatedSheets, 'EXCEL_IMPORT_MODAL');
   };
 
   // Unload / Remove an entire file and all its sheets
   const handleUnloadSingleFile = (fileId: string) => {
-    setLoadedSheets((prev) => prev.filter((s) => s.fileId !== fileId));
-    setLoadedFiles((prev) => prev.filter((f) => f.fileId !== fileId));
+    const updatedSheets = loadedSheets.filter((s) => s.fileId !== fileId);
+    const updatedFiles = loadedFiles.filter((f) => f.fileId !== fileId);
+    setLoadedSheets(updatedSheets);
+    setLoadedFiles(updatedFiles);
+    setSharedLoadedData(updatedFiles, updatedSheets, 'EXCEL_IMPORT_MODAL');
     setSelectedSheetFilter('ALL');
   };
 
@@ -257,6 +265,7 @@ export const ExcelImportModal: React.FC<ExcelImportModalProps> = ({
   const handleUnloadAll = () => {
     setLoadedFiles([]);
     setLoadedSheets([]);
+    setSharedLoadedData([], [], 'EXCEL_IMPORT_MODAL');
     setSelectedFile(null);
     setParseResult(null);
     setParseError(null);
@@ -305,13 +314,20 @@ export const ExcelImportModal: React.FC<ExcelImportModalProps> = ({
         return;
       }
 
+      let finalFiles: LoadedExcelFile[];
+      let finalSheets: LoadedExcelSheet[];
+
       if (append) {
-        setLoadedFiles((prev) => [...prev, ...newFiles]);
-        setLoadedSheets((prev) => [...prev, ...newSheets]);
+        finalFiles = [...loadedFiles, ...newFiles];
+        finalSheets = [...loadedSheets, ...newSheets];
       } else {
-        setLoadedFiles(newFiles);
-        setLoadedSheets(newSheets);
+        finalFiles = newFiles;
+        finalSheets = newSheets;
       }
+
+      setLoadedFiles(finalFiles);
+      setLoadedSheets(finalSheets);
+      setSharedLoadedData(finalFiles, finalSheets, 'EXCEL_IMPORT_MODAL');
 
       if (validFiles.length > 0) {
         setSelectedFile(validFiles[0]);
@@ -388,9 +404,9 @@ export const ExcelImportModal: React.FC<ExcelImportModalProps> = ({
     setMeetingTime(student.meetingTime || '11:00 AM IST');
     setMeetingMode(student.meetingMode || 'ONLINE');
     setMeetingVenue(student.venue || 'SDSR Board Room / Google Meet');
-    setInternalExpert(student.internalExpertName || 'Dr. Bhoomika Patel');
-    setExternalExpert1(student.externalExpert1Name || 'Dr. Dhiraj Bhatia');
-    setExternalExpert2(student.externalExpert2Name || 'Prof. (Dr.) Sanjay K. Jain');
+    setInternalExpert(student.internalExpertName || '');
+    setExternalExpert1(student.externalExpert1Name || '');
+    setExternalExpert2(student.externalExpert2Name || '');
     setGeneratedLetterRecord(null);
     setLetterSuccessNotice(null);
     setActiveTab('PREPARE_LETTER');
@@ -422,8 +438,19 @@ export const ExcelImportModal: React.FC<ExcelImportModalProps> = ({
         },
         {
           internalExpertName: internalExpert,
+          internalExpertDesignation: targetStudentForLetter.internalExpertDesignation,
+          internalExpertDept: targetStudentForLetter.internalExpertDept,
+          internalExpertCampus: targetStudentForLetter.internalExpertCampus,
           externalExpert1Name: externalExpert1,
+          externalExpert1Designation: targetStudentForLetter.externalExpert1Designation,
+          externalExpert1Dept: targetStudentForLetter.externalExpert1Dept,
+          externalExpert1Inst: targetStudentForLetter.externalExpert1Inst,
+          externalExpert1City: targetStudentForLetter.externalExpert1City,
           externalExpert2Name: externalExpert2,
+          externalExpert2Designation: targetStudentForLetter.externalExpert2Designation,
+          externalExpert2Dept: targetStudentForLetter.externalExpert2Dept,
+          externalExpert2Inst: targetStudentForLetter.externalExpert2Inst,
+          externalExpert2City: targetStudentForLetter.externalExpert2City,
         },
         letterRefNo,
         currentUser,
@@ -453,9 +480,16 @@ export const ExcelImportModal: React.FC<ExcelImportModalProps> = ({
 
       // Refresh parent app records
       onImportComplete({ scholarsAdded: 0, scholarsUpdated: 1, rpcAdded: 1 });
+      setActionNotice({
+        type: 'success',
+        message: `Successfully prepared and saved approved RPC letter for ${targetStudentForLetter.scholarName}.`,
+      });
     } catch (err: any) {
       console.error('Error preparing approved letter:', err);
-      alert(`Failed to prepare approved letter: ${err.message || err}`);
+      setActionNotice({
+        type: 'error',
+        message: `Failed to prepare approved letter: ${err.message || err}`,
+      });
     } finally {
       setIsProcessingLetter(false);
     }
@@ -465,14 +499,12 @@ export const ExcelImportModal: React.FC<ExcelImportModalProps> = ({
   const handleBatchPrepareApprovedLetters = async () => {
     const selectedStudents = matchedStudents.filter((m) => selectedMatchIds.has(m.id));
     if (selectedStudents.length === 0) {
-      alert('Please select at least one matched student to prepare approved letters.');
+      setActionNotice({
+        type: 'error',
+        message: 'Please select at least one matched student to prepare approved letters.',
+      });
       return;
     }
-
-    const confirmed = window.confirm(
-      `Prepare and officially approve RPC letters for ${selectedStudents.length} selected student(s) with Dean, SDSR authorization?`
-    );
-    if (!confirmed) return;
 
     setIsProcessingLetter(true);
     let preparedCount = 0;
@@ -498,9 +530,20 @@ export const ExcelImportModal: React.FC<ExcelImportModalProps> = ({
             venue: student.venue || 'SDSR Board Room / Google Meet',
           },
           {
-            internalExpertName: student.internalExpertName || 'Dr. Bhoomika Patel',
-            externalExpert1Name: student.externalExpert1Name || 'Dr. Dhiraj Bhatia',
-            externalExpert2Name: student.externalExpert2Name || 'Prof. (Dr.) Sanjay K. Jain',
+            internalExpertName: student.internalExpertName || '',
+            internalExpertDesignation: student.internalExpertDesignation,
+            internalExpertDept: student.internalExpertDept,
+            internalExpertCampus: student.internalExpertCampus,
+            externalExpert1Name: student.externalExpert1Name || '',
+            externalExpert1Designation: student.externalExpert1Designation,
+            externalExpert1Dept: student.externalExpert1Dept,
+            externalExpert1Inst: student.externalExpert1Inst,
+            externalExpert1City: student.externalExpert1City,
+            externalExpert2Name: student.externalExpert2Name || '',
+            externalExpert2Designation: student.externalExpert2Designation,
+            externalExpert2Dept: student.externalExpert2Dept,
+            externalExpert2Inst: student.externalExpert2Inst,
+            externalExpert2City: student.externalExpert2City,
           },
           refNo,
           currentUser,
@@ -510,7 +553,10 @@ export const ExcelImportModal: React.FC<ExcelImportModalProps> = ({
       }
 
       onImportComplete({ scholarsAdded: 0, scholarsUpdated: preparedCount, rpcAdded: preparedCount });
-      alert(`Successfully prepared and authorized ${preparedCount} official Approved Letter(s) with Dean signature seal!`);
+      setActionNotice({
+        type: 'success',
+        message: `Successfully prepared and authorized ${preparedCount} official Approved Letter(s) with Dean signature seal!`,
+      });
 
       // Refresh matching statuses
       setMatchedStudents((prev) =>
@@ -522,7 +568,10 @@ export const ExcelImportModal: React.FC<ExcelImportModalProps> = ({
       );
     } catch (err: any) {
       console.error('Batch letter preparation error:', err);
-      alert(`Error during batch preparation: ${err.message || err}`);
+      setActionNotice({
+        type: 'error',
+        message: `Error during batch preparation: ${err.message || err}`,
+      });
     } finally {
       setIsProcessingLetter(false);
     }
@@ -548,9 +597,16 @@ export const ExcelImportModal: React.FC<ExcelImportModalProps> = ({
 
       setCommitSummary(summary);
       onImportComplete(summary);
+      setActionNotice({
+        type: 'success',
+        message: `Successfully committed ${summary.scholarsAdded} new scholars and ${summary.rpcAdded} RPC records to database.`,
+      });
     } catch (err: any) {
       console.error('Commit error:', err);
-      alert(`Import error: ${err.message || err}`);
+      setActionNotice({
+        type: 'error',
+        message: `Import error: ${err.message || err}`,
+      });
     } finally {
       setIsCommittingAll(false);
     }
@@ -850,6 +906,32 @@ export const ExcelImportModal: React.FC<ExcelImportModalProps> = ({
 
         {/* Tab Body Content */}
         <div className="flex-1 overflow-y-auto p-4 sm:p-6 space-y-6">
+          {actionNotice && (
+            <div
+              className={`p-3.5 rounded-lg flex items-center justify-between text-xs border shadow-2xs ${
+                actionNotice.type === 'success'
+                  ? 'bg-emerald-50 border-emerald-300 text-emerald-900'
+                  : 'bg-red-50 border-red-300 text-red-900'
+              }`}
+            >
+              <div className="flex items-center gap-2 font-medium">
+                {actionNotice.type === 'success' ? (
+                  <ShieldCheck className="w-4 h-4 text-emerald-600 shrink-0" />
+                ) : (
+                  <AlertTriangle className="w-4 h-4 text-red-600 shrink-0" />
+                )}
+                <span>{actionNotice.message}</span>
+              </div>
+              <button
+                type="button"
+                onClick={() => setActionNotice(null)}
+                className="text-stone-400 hover:text-stone-600 cursor-pointer font-bold px-1.5 py-0.5"
+                title="Dismiss"
+              >
+                ✕
+              </button>
+            </div>
+          )}
 
           {/* ============================================================ */}
           {/* TAB 1: LOAD & MANAGE EXCEL SHEETS                            */}
@@ -1760,36 +1842,39 @@ export const ExcelImportModal: React.FC<ExcelImportModalProps> = ({
 
                       <div>
                         <label className="block text-[11px] font-medium text-stone-700 mb-1">
-                          Internal Expert
+                          Internal Guide / Internal Expert (From Excel)
                         </label>
                         <input
                           type="text"
                           value={internalExpert}
                           onChange={(e) => setInternalExpert(e.target.value)}
+                          placeholder="Internal Guide as provided on Excel sheet"
                           className="w-full text-xs px-3 py-1.5 border border-stone-300 rounded focus:ring-1 focus:ring-stone-500 focus:outline-hidden"
                         />
                       </div>
 
                       <div>
                         <label className="block text-[11px] font-medium text-stone-700 mb-1">
-                          External Expert 1
+                          External Guide / External Expert 1 (From Excel)
                         </label>
                         <input
                           type="text"
                           value={externalExpert1}
                           onChange={(e) => setExternalExpert1(e.target.value)}
+                          placeholder="External Guide as provided on Excel sheet"
                           className="w-full text-xs px-3 py-1.5 border border-stone-300 rounded focus:ring-1 focus:ring-stone-500 focus:outline-hidden"
                         />
                       </div>
 
                       <div>
                         <label className="block text-[11px] font-medium text-stone-700 mb-1">
-                          External Expert 2
+                          External Guide / External Expert 2 (Optional)
                         </label>
                         <input
                           type="text"
                           value={externalExpert2}
                           onChange={(e) => setExternalExpert2(e.target.value)}
+                          placeholder="Second External Expert (if provided on Excel sheet)"
                           className="w-full text-xs px-3 py-1.5 border border-stone-300 rounded focus:ring-1 focus:ring-stone-500 focus:outline-hidden"
                         />
                       </div>

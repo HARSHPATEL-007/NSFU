@@ -54,3 +54,20 @@ export function formatShortDate(dateInput: string | Date | undefined | null, fal
   }
   return d.toLocaleDateString('en-GB');
 }
+
+/**
+ * Returns ordinal string for any integer (supports digits in the thousands, e.g. 1st, 22nd, 101st, 1000th, 1001st).
+ */
+export function getOrdinalText(num: number): string {
+  const abs = Math.abs(Math.floor(num));
+  const mod100 = abs % 100;
+  if (mod100 >= 11 && mod100 <= 13) {
+    return `${num}th`;
+  }
+  const mod10 = abs % 10;
+  if (mod10 === 1) return `${num}st`;
+  if (mod10 === 2) return `${num}nd`;
+  if (mod10 === 3) return `${num}rd`;
+  return `${num}th`;
+}
+

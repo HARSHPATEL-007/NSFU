@@ -21,7 +21,9 @@ import {
   Trash2,
   User,
   Hash,
+  Edit3,
 } from 'lucide-react';
+import { ChangeRpcNumberModal } from './ChangeRpcNumberModal';
 import {
   exportApprovedLettersToExcel,
   exportAllRpcRecordsToExcel,
@@ -63,6 +65,7 @@ export const OfficeDashboard: React.FC<OfficeDashboardProps> = ({
   const [showConfirmPurgeApproved, setShowConfirmPurgeApproved] = useState(false);
   const [showConfirmPurgeDemo, setShowConfirmPurgeDemo] = useState(false);
   const [recordToDelete, setRecordToDelete] = useState<RpcRecord | null>(null);
+  const [recordToChangeRpc, setRecordToChangeRpc] = useState<RpcRecord | null>(null);
   const [isPurging, setIsPurging] = useState(false);
   const [isDeleting, setIsDeleting] = useState(false);
   const [notification, setNotification] = useState<{ type: 'success' | 'error'; message: string } | null>(null);
@@ -248,7 +251,7 @@ export const OfficeDashboard: React.FC<OfficeDashboardProps> = ({
             guideMatch ||
             rpcStageStr.includes(query) ||
             rpcStageHyphen.includes(query) ||
-            rpcOnlyNum === query ||
+            rpcOnlyNum.includes(query) ||
             approvedRef.includes(query) ||
             draftRef.includes(query) ||
             letterRef.includes(query) ||
@@ -383,7 +386,10 @@ export const OfficeDashboard: React.FC<OfficeDashboardProps> = ({
                       setIsUnloadMenuOpen(false);
                       const approved = records.filter((r) => r.status === 'APPROVED');
                       if (approved.length === 0) {
-                        alert('No approved letters currently in database to export.');
+                        setNotification({
+                          type: 'error',
+                          message: 'No approved letters currently in database to export.',
+                        });
                         return;
                       }
                       exportApprovedLettersToExcel(approved);
@@ -1067,10 +1073,21 @@ export const OfficeDashboard: React.FC<OfficeDashboardProps> = ({
                     <td className="py-3.5 px-4 font-mono text-stone-700 font-medium">
                       {highlightMatch(rec.enrollmentNo, searchQuery)}
                     </td>
-                    <td className="py-3.5 px-4">
-                      <span className="font-bold text-stone-900 bg-stone-100 px-2 py-0.5 rounded text-xs">
-                        RPC {rec.rpcNumber}
-                      </span>
+                    <td className="py-3.5 px-4" onClick={(e) => e.stopPropagation()}>
+                      <div className="flex items-center gap-1.5">
+                        <span className="font-bold text-stone-900 bg-stone-100 px-2 py-0.5 rounded text-xs border border-stone-200">
+                          RPC {rec.rpcNumber}
+                        </span>
+                        <button
+                          type="button"
+                          onClick={() => setRecordToChangeRpc(rec)}
+                          id={`btn-edit-rpc-num-${rec.id}`}
+                          title="Change RPC Number (SDSR Office)"
+                          className="p-1 rounded text-stone-400 hover:text-stone-900 hover:bg-stone-200/80 transition cursor-pointer"
+                        >
+                          <Edit3 className="w-3.5 h-3.5" />
+                        </button>
+                      </div>
                     </td>
                     <td className="py-3.5 px-4 font-mono text-stone-600">
                       {rec.rpcDate
@@ -1086,6 +1103,16 @@ export const OfficeDashboard: React.FC<OfficeDashboardProps> = ({
                     </td>
                     <td className="py-3.5 px-4 text-right" onClick={(e) => e.stopPropagation()}>
                       <div className="inline-flex items-center gap-1.5 justify-end">
+                        <button
+                          onClick={() => setRecordToChangeRpc(rec)}
+                          id={`btn-action-change-rpc-${rec.id}`}
+                          type="button"
+                          title="Change RPC Stage Number"
+                          className="inline-flex items-center gap-1 px-2.5 py-1.5 text-xs font-semibold text-stone-700 bg-stone-100 hover:bg-stone-200 active:bg-stone-300 rounded border border-stone-300 transition cursor-pointer"
+                        >
+                          <Hash className="w-3 h-3 text-stone-600" />
+                          RPC No.
+                        </button>
                         <button
                           onClick={() => onOpenRecord(rec.id)}
                           id={`btn-open-rpc-${rec.id}`}
@@ -1173,7 +1200,19 @@ export const OfficeDashboard: React.FC<OfficeDashboardProps> = ({
                           {highlightMatch(rec.enrollmentNo, searchQuery)}
                         </div>
                       </td>
-                      <td className="py-3 px-4 font-bold text-stone-700">RPC {rec.rpcNumber}</td>
+                      <td className="py-3 px-4">
+                        <div className="flex items-center gap-1.5">
+                          <span className="font-bold text-stone-700">RPC {rec.rpcNumber}</span>
+                          <button
+                            type="button"
+                            onClick={() => setRecordToChangeRpc(rec)}
+                            title="Change RPC Number (Administrative Override)"
+                            className="p-1 rounded text-stone-400 hover:text-stone-800 hover:bg-stone-200 transition cursor-pointer"
+                          >
+                            <Edit3 className="w-3 h-3" />
+                          </button>
+                        </div>
+                      </td>
                       <td className="py-3 px-4 font-mono text-stone-600">
                         {rec.rpcDate ? new Date(rec.rpcDate).toLocaleDateString('en-GB') : '—'}
                       </td>
@@ -1184,6 +1223,16 @@ export const OfficeDashboard: React.FC<OfficeDashboardProps> = ({
                         {rec.approvedAt ? new Date(rec.approvedAt).toLocaleDateString('en-GB') : '—'}
                       </td>
                       <td className="py-3 px-4 text-right space-x-1.5">
+                        <button
+                          onClick={() => setRecordToChangeRpc(rec)}
+                          id={`btn-action-change-rpc-approved-${rec.id}`}
+                          type="button"
+                          title="Change RPC Stage Number (SDSR Office Authority)"
+                          className="inline-flex items-center gap-1 px-2.5 py-1 text-[11px] font-semibold text-stone-700 bg-stone-100 hover:bg-stone-200 active:bg-stone-300 rounded border border-stone-300 transition cursor-pointer"
+                        >
+                          <Hash className="w-3 h-3 text-stone-600" />
+                          RPC No.
+                        </button>
                         <button
                           onClick={() => onViewLetterModal(rec)}
                           id={`btn-view-approved-letter-${rec.id}`}
@@ -1357,6 +1406,27 @@ export const OfficeDashboard: React.FC<OfficeDashboardProps> = ({
             </div>
           </div>
         </div>
+      )}
+
+      {/* Change RPC Number Modal */}
+      {recordToChangeRpc && (
+        <ChangeRpcNumberModal
+          record={recordToChangeRpc}
+          isOpen={Boolean(recordToChangeRpc)}
+          onClose={() => setRecordToChangeRpc(null)}
+          onSuccess={async (updated) => {
+            setNotification({
+              type: 'success',
+              message: `Successfully updated ${recordToChangeRpc.scholarName} to RPC ${updated.rpcNumber}.`,
+            });
+            setTimeout(() => setNotification(null), 4000);
+            if (onRefreshData) {
+              await onRefreshData();
+            }
+          }}
+          currentUser={currentUser}
+          existingRecords={records}
+        />
       )}
     </div>
   );

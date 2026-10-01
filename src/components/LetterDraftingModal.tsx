@@ -2,7 +2,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import { RpcRecord, OfficialLetterData, UserProfile } from '../types';
 import { OfficialRpcLetter } from './OfficialRpcLetter';
 import { saveDraftLetter, validateForForwarding } from '../services/dataService';
-import { formatDisplayDate } from '../utils/dateUtils';
+import { formatDisplayDate, getOrdinalText } from '../utils/dateUtils';
 import { X, Save, Send, Download, Check, AlertCircle, Edit3, Eye, Loader2, Printer, FileDown, CheckCircle2 } from 'lucide-react';
 import { downloadLetterElementAsPdf, generateLetterPdfFilename } from '../utils/pdfExport';
 import { downloadApprovedRpcLetterDocx } from '../utils/docxExport';
@@ -27,7 +27,7 @@ export const LetterDraftingModal: React.FC<LetterDraftingModalProps> = ({
   // Controlled template dynamic fields
   const [formData, setFormData] = useState<OfficialLetterData>(
     record.letterData || {
-      refNo: `NFSU/SDSR/RPC/0${record.rpcNumber}/25`,
+      refNo: `NFSU/SDSR/RPC/${record.rpcNumber < 10 ? `0${record.rpcNumber}` : record.rpcNumber}/25`,
       date: new Date().toLocaleDateString('en-GB'),
       schoolName: record.school,
       schoolCampus: 'Gandhinagr',
@@ -48,13 +48,13 @@ export const LetterDraftingModal: React.FC<LetterDraftingModalProps> = ({
       externalExpert2Dept: record.rpcMembers?.externalExpert2?.department || '',
       externalExpert2Inst: record.rpcMembers?.externalExpert2?.schoolOrInstitution || '',
       externalExpert2City: record.rpcMembers?.externalExpert2?.location || '',
-      subject: `${record.rpcNumber === 1 ? '1st' : record.rpcNumber === 2 ? '2nd' : record.rpcNumber === 3 ? '3rd' : `${record.rpcNumber}th`} Meeting of the Research Progress Committee (RPC) for Ph.D. Scholar Registered under ${record.rpcMembers?.guide?.name || ''}, ${record.rpcMembers?.guide?.designation || ''}, NFSU.`,
+      subject: `${getOrdinalText(record.rpcNumber)} Meeting of the Research Progress Committee (RPC) for Ph.D. Scholar Registered under ${record.rpcMembers?.guide?.name || ''}, ${record.rpcMembers?.guide?.designation || ''}, NFSU.`,
       meetingDateText: record.rpcDate ? formatDisplayDate(record.rpcDate) : 'To be confirmed',
       meetingTimeText: record.meetingTime || '11:00 AM',
       meetingModeText: record.meetingMode === 'ONLINE' ? 'online mode' : record.meetingMode === 'HYBRID' ? 'hybrid mode' : 'physical mode',
       meetingVenue: record.venue || '',
       scholarName: record.scholarName,
-      rpcOrdinal: record.rpcNumber === 1 ? '1st' : record.rpcNumber === 2 ? '2nd' : record.rpcNumber === 3 ? '3rd' : `${record.rpcNumber}th`,
+      rpcOrdinal: getOrdinalText(record.rpcNumber),
       copyTo: ['Associate Dean- SDSR'],
     }
   );
@@ -313,6 +313,19 @@ export const LetterDraftingModal: React.FC<LetterDraftingModalProps> = ({
                     value={formData.refNo}
                     onChange={(e) => handleFieldChange('refNo', e.target.value)}
                     className="w-full text-xs font-mono p-2 border border-stone-300 rounded"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-xs font-semibold text-stone-700 mb-1">
+                    RPC Stage Ordinal (e.g. 1st, 2nd, 3rd) *
+                  </label>
+                  <input
+                    type="text"
+                    value={formData.rpcOrdinal || '1st'}
+                    onChange={(e) => handleFieldChange('rpcOrdinal', e.target.value)}
+                    className="w-full text-xs font-bold p-2 border border-stone-300 rounded"
+                    placeholder="e.g. 1st, 2nd, 3rd, 4th"
                   />
                 </div>
 

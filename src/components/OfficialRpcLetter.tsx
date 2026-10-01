@@ -93,31 +93,31 @@ export const OfficialRpcLetter: React.FC<OfficialRpcLetterProps> = ({
           },
           internalExpert: {
             id: '2',
-            name: letterData.internalExpertName || 'Dr. Bhoomika Patel',
-            designation: letterData.internalExpertDesignation || 'Dean (I/C), SPH',
+            name: letterData.internalExpertName || '',
+            designation: letterData.internalExpertDesignation || (letterData.internalExpertName ? 'Internal Expert Member' : ''),
             department: letterData.internalExpertDept || '',
-            schoolOrInstitution: 'NFSU',
+            schoolOrInstitution: letterData.internalExpertCampus || 'NFSU',
             location: letterData.internalExpertCampus || 'Gandhinagar',
             email: '',
             memberType: 'INTERNAL',
           },
           externalExpert1: {
             id: '3',
-            name: letterData.externalExpert1Name || 'Dr. Dhiraj Bhatia',
-            designation: letterData.externalExpert1Designation || 'Associate Professor & INYAS-INSA Member',
-            department: letterData.externalExpert1Dept || 'Department of Biological Science and Engineering',
-            schoolOrInstitution: letterData.externalExpert1Inst || 'Indian Institute of Technology Gandhinagar',
-            location: letterData.externalExpert1City || 'Gujarat',
+            name: letterData.externalExpert1Name || '',
+            designation: letterData.externalExpert1Designation || (letterData.externalExpert1Name ? 'External Expert Member' : ''),
+            department: letterData.externalExpert1Dept || '',
+            schoolOrInstitution: letterData.externalExpert1Inst || '',
+            location: letterData.externalExpert1City || '',
             email: '',
             memberType: 'EXTERNAL_1',
           },
           externalExpert2: {
             id: '4',
-            name: letterData.externalExpert2Name || 'Dr. Prakash Jha',
-            designation: letterData.externalExpert2Designation || 'Professor & Dean',
-            department: letterData.externalExpert2Dept || 'School of Applied Material Science',
-            schoolOrInstitution: letterData.externalExpert2Inst || 'Central University of Gujarat',
-            location: letterData.externalExpert2City || 'Gujarat',
+            name: letterData.externalExpert2Name || '',
+            designation: letterData.externalExpert2Designation || (letterData.externalExpert2Name ? 'External Expert Member' : ''),
+            department: letterData.externalExpert2Dept || '',
+            schoolOrInstitution: letterData.externalExpert2Inst || '',
+            location: letterData.externalExpert2City || '',
             email: '',
             memberType: 'EXTERNAL_2',
           },
@@ -375,53 +375,61 @@ export const OfficialRpcLetter: React.FC<OfficialRpcLetterProps> = ({
               <div>NFSU</div>
             </li>
 
-            {/* 3. Internal Expert Member */}
-            <li className="pl-1">
-              <div>
-                {letterData.internalExpertName || 'Dr. Bhoomika Patel'} (Internal Expert Member).
-              </div>
-              <div>{letterData.internalExpertDesignation || 'Dean (I/C), SPH'}</div>
-              <div>
-                {letterData.internalExpertDept ? `${letterData.internalExpertDept}, ` : ''}
-                NFSU{letterData.internalExpertCampus ? `, ${letterData.internalExpertCampus.replace(/^NFSU,\s*/i, '')}` : ', Gandhinagar'}
-              </div>
-            </li>
+            {/* 3. Internal Expert Member / Internal Guide */}
+            {letterData.internalExpertName ? (
+              <li className="pl-1">
+                <div>
+                  {letterData.internalExpertName} (Internal Expert Member).
+                </div>
+                {letterData.internalExpertDesignation && <div>{letterData.internalExpertDesignation}</div>}
+                <div>
+                  {letterData.internalExpertDept ? `${letterData.internalExpertDept}, ` : ''}
+                  NFSU{letterData.internalExpertCampus ? `, ${letterData.internalExpertCampus.replace(/^NFSU,\s*/i, '')}` : ', Gandhinagar'}
+                </div>
+              </li>
+            ) : null}
 
-            {/* 4. External Expert Member 1 */}
-            <li className="pl-1">
-              <div>
-                {letterData.externalExpert1Name || 'Dr. Dhiraj Bhatia'} (External Expert Member)
-              </div>
-              <div>
-                {letterData.externalExpert1Designation || 'Associate Professor & INYAS-INSA Member'}
-              </div>
-              <div>
-                {letterData.externalExpert1Dept || 'Department of Biological Science and Engineering'}
-              </div>
-              <div>
-                {letterData.externalExpert1Inst || 'Indian Institute of Technology Gandhinagar'}
-              </div>
-              <div>{letterData.externalExpert1City || 'Gujarat'}</div>
-            </li>
+            {/* 4. External Expert Member 1 / External Guide */}
+            {letterData.externalExpert1Name ? (
+              <li className="pl-1">
+                <div>
+                  {letterData.externalExpert1Name} (External Expert Member)
+                </div>
+                {letterData.externalExpert1Designation && (
+                  <div>{letterData.externalExpert1Designation}</div>
+                )}
+                {letterData.externalExpert1Dept && (
+                  <div>{letterData.externalExpert1Dept}</div>
+                )}
+                {letterData.externalExpert1Inst && (
+                  <div>{letterData.externalExpert1Inst}</div>
+                )}
+                {letterData.externalExpert1City && <div>{letterData.externalExpert1City}</div>}
+              </li>
+            ) : null}
 
             {/* 5. External Expert Member 2 */}
-            <li className="pl-1">
-              <div>
-                {letterData.externalExpert2Name || 'Dr. Prakash Jha'} (External Expert Member).
-              </div>
-              <div>{letterData.externalExpert2Designation || 'Professor & Dean'}</div>
-              <div>
-                {letterData.externalExpert2Dept || 'School of Applied Material Science'}
-              </div>
-              <div>
-                {letterData.externalExpert2Inst || 'Central University of Gujarat'}
-              </div>
-              {letterData.externalExpert2City &&
-                letterData.externalExpert2City !== 'Gandhinagar' &&
-                letterData.externalExpert2City !== 'Gujarat' && (
-                  <div>{letterData.externalExpert2City}</div>
+            {letterData.externalExpert2Name ? (
+              <li className="pl-1">
+                <div>
+                  {letterData.externalExpert2Name} (External Expert Member).
+                </div>
+                {letterData.externalExpert2Designation && (
+                  <div>{letterData.externalExpert2Designation}</div>
                 )}
-            </li>
+                {letterData.externalExpert2Dept && (
+                  <div>{letterData.externalExpert2Dept}</div>
+                )}
+                {letterData.externalExpert2Inst && (
+                  <div>{letterData.externalExpert2Inst}</div>
+                )}
+                {letterData.externalExpert2City &&
+                  letterData.externalExpert2City !== 'Gandhinagar' &&
+                  letterData.externalExpert2City !== 'Gujarat' && (
+                    <div>{letterData.externalExpert2City}</div>
+                  )}
+              </li>
+            ) : null}
           </ol>
         </div>
 

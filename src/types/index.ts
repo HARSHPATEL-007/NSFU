@@ -50,6 +50,20 @@ export interface Scholar {
   guideEmail: string;
   guideSchool: string;
   coGuideName?: string;
+  internalExpertName?: string;
+  internalExpertDesignation?: string;
+  internalExpertDept?: string;
+  internalExpertCampus?: string;
+  externalExpert1Name?: string;
+  externalExpert1Designation?: string;
+  externalExpert1Dept?: string;
+  externalExpert1Inst?: string;
+  externalExpert1City?: string;
+  externalExpert2Name?: string;
+  externalExpert2Designation?: string;
+  externalExpert2Dept?: string;
+  externalExpert2Inst?: string;
+  externalExpert2City?: string;
   registrationDate: string;
   researchTopic: string;
   contactDetails: {

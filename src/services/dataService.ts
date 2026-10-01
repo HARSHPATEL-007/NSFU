@@ -40,7 +40,7 @@ import {
   syncLoadedExcelToFirestore,
   loadLoadedExcelFromFirestore,
 } from './excelService';
-import { formatDisplayDate } from '../utils/dateUtils';
+import { formatDisplayDate, getOrdinalText } from '../utils/dateUtils';
 
 // All demo IDs to ignore and purge across the entire portal
 export const REMOVED_DEMO_IDS = new Set([
@@ -913,6 +913,98 @@ export async function updateRpcRecord(
   return updatedRecord;
 }
 
+// Change RPC Number for a record (SDSR Office administrative authority)
+export async function changeRpcNumber(
+  recordId: string,
+  newRpcNumber: number,
+  user: UserProfile,
+  reason?: string,
+  syncLetter: boolean = true
+): Promise<RpcRecord> {
+  if (user.role !== 'SDSR_OFFICE') {
+    throw new Error('Permission denied: Only SDSR Office personnel are authorized to change the RPC number.');
+  }
+
+  const record = memoryRpcRecords.find((r) => r.id === recordId);
+  if (!record) throw new Error('RPC Record not found');
+
+  const parsedNum = typeof newRpcNumber === 'string' ? parseInt(newRpcNumber, 10) : newRpcNumber;
+  if (isNaN(parsedNum) || parsedNum < 1) {
+    throw new Error('RPC Number must be a valid positive integer (1 or higher).');
+  }
+
+  const oldRpcNumber = record.rpcNumber;
+  if (oldRpcNumber === parsedNum) {
+    return record;
+  }
+
+  let updatedLetterData = record.letterData;
+  if (syncLetter && updatedLetterData) {
+    const ordinal = getOrdinalText(parsedNum);
+
+    const oldOrdinalPattern = /(?:1st|2nd|3rd|\d+th|1ˢᵗ|2ⁿᵈ|3ʳᵈ|\d+ᵗʰ)\s+Meeting\s+of\s+the\s+Research\s+Progress\s+Committee/i;
+    let newSubject = updatedLetterData.subject || '';
+    if (oldOrdinalPattern.test(newSubject)) {
+      newSubject = newSubject.replace(oldOrdinalPattern, `${ordinal} Meeting of the Research Progress Committee`);
+    } else {
+      newSubject = `${ordinal} Meeting of the Research Progress Committee (RPC) for Ph.D. Scholar Registered under ${record.rpcMembers?.guide?.name || ''}, ${record.rpcMembers?.guide?.designation || ''}, NFSU.`;
+    }
+
+    let newRefNo = updatedLetterData.refNo || '';
+    if (/RPC[-\/](?:0\d+|\d+)/i.test(newRefNo)) {
+      newRefNo = newRefNo.replace(/RPC([-\/])(?:0\d+|\d+)/i, `RPC$1${String(parsedNum).padStart(2, '0')}`);
+    }
+
+    updatedLetterData = {
+      ...updatedLetterData,
+      rpcOrdinal: ordinal,
+      subject: newSubject,
+      refNo: newRefNo,
+    };
+  }
+
+  let newDraftRef = record.draftDocumentReference;
+  if (newDraftRef && /RPC[-\/](?:0\d+|\d+)/i.test(newDraftRef)) {
+    newDraftRef = newDraftRef.replace(/RPC([-\/])(?:0\d+|\d+)/i, `RPC$1${String(parsedNum).padStart(2, '0')}`);
+  }
+  let newApprovedRef = record.approvedDocumentReference;
+  if (newApprovedRef && /RPC[-\/](?:0\d+|\d+)/i.test(newApprovedRef)) {
+    newApprovedRef = newApprovedRef.replace(/RPC([-\/])(?:0\d+|\d+)/i, `RPC$1${String(parsedNum).padStart(2, '0')}`);
+  }
+
+  const updates: Partial<RpcRecord> = {
+    rpcNumber: parsedNum,
+    ...(record.status === 'APPROVED' ? { status: 'APPROVED' } : {}),
+    ...(updatedLetterData ? { letterData: updatedLetterData } : {}),
+    ...(newDraftRef ? { draftDocumentReference: newDraftRef } : {}),
+    ...(newApprovedRef ? { approvedDocumentReference: newApprovedRef } : {}),
+  };
+
+  const logMessage = `SDSR Office changed RPC evaluation number from RPC ${oldRpcNumber} to RPC ${parsedNum}.${reason?.trim() ? ` Remarks: ${reason.trim()}` : ''}`;
+
+  const updated = await updateRpcRecord(
+    recordId,
+    updates,
+    user,
+    'RPC Number Changed',
+    logMessage
+  );
+
+  // Synchronize scholar's currentRpcNo if this stage aligns with or advances scholar stage
+  const scholar = memoryScholars.find((s) => s.id === record.scholarId);
+  if (scholar && (scholar.currentRpcNo === oldRpcNumber || scholar.currentRpcNo < parsedNum)) {
+    scholar.currentRpcNo = parsedNum;
+    saveAllPortalDataLocally();
+    try {
+      await updateDoc(doc(db, 'scholars', scholar.id), { currentRpcNo: parsedNum });
+    } catch (e) {
+      console.warn('Could not update scholar currentRpcNo:', e);
+    }
+  }
+
+  return updated;
+}
+
 // Ensure scholar exists in database (or register new scholar from Excel roster)
 export async function ensureScholarRegistered(scholar: Scholar): Promise<Scholar> {
   const existing = memoryScholars.find(
@@ -1035,7 +1127,7 @@ export async function updateRpcMembers(
       internalExpertName: members.internalExpert.name,
       internalExpertDesignation: members.internalExpert.designation,
       internalExpertDept: members.internalExpert.department,
-      internalExpertCampus: members.internalExpert.schoolOrInstitution,
+      internalExpertCampus: members.internalExpert.location || members.internalExpert.schoolOrInstitution,
       externalExpert1Name: members.externalExpert1.name,
       externalExpert1Designation: members.externalExpert1.designation,
       externalExpert1Dept: members.externalExpert1.department,
@@ -1121,7 +1213,9 @@ export async function createNewRpcRequest(
     scholar,
     formatDisplayDate(rpcDate),
     meetingTime,
-    meetingMode === 'ONLINE' ? 'online mode' : meetingMode === 'HYBRID' ? 'hybrid mode' : `physical mode at ${venue || 'SDSR Board Room'}`
+    meetingMode === 'ONLINE' ? 'online mode' : meetingMode === 'HYBRID' ? 'hybrid mode' : `physical mode at ${venue || 'SDSR Board Room'}`,
+    venue,
+    rpcMembers
   );
 
   const newRecord: RpcRecord = {
@@ -1440,29 +1534,68 @@ export async function bulkImportScholarsAndRpc(
         isActive: true,
       };
 
-    // Resolve internal expert
-    const internalExpert: RpcMember =
-      membersPool.find(
-        (m) =>
-          r.internalExpertName &&
-          m.name.toLowerCase().includes(r.internalExpertName.toLowerCase())
-      ) || DEMO_MEMBERS[2]; // Default Dr. Bhoomika Patel
+    // Resolve internal expert from Excel sheet data or pool
+    const matchedInternal = r.internalExpertName
+      ? membersPool.find((m) => m.name.toLowerCase().includes(r.internalExpertName.toLowerCase()))
+      : undefined;
+    const internalExpert: RpcMember = matchedInternal || (r.internalExpertName
+      ? {
+          id: `mem-int-${scholar.id}-${Date.now()}`,
+          name: r.internalExpertName,
+          designation: r.internalExpertDesignation || 'Associate Professor',
+          department: r.internalExpertDept || scholar.department || scholar.school,
+          schoolOrInstitution: scholar.school || 'National Forensic Sciences University',
+          location: r.internalExpertCampus || 'NFSU, Gandhinagar',
+          email: `${r.internalExpertName.toLowerCase().replace(/[^a-z]/g, '.')}@nfsu.ac.in`,
+          memberType: 'INTERNAL',
+          isActive: true,
+          addressLine1: r.internalExpertDesignation || 'Associate Professor',
+          addressLine2: r.internalExpertDept || scholar.school,
+          addressLine3: r.internalExpertCampus || 'NFSU, Gandhinagar',
+        }
+      : DEMO_MEMBERS[2]); // Default Dr. Bhoomika Patel
 
-    // Resolve external expert 1
-    const ext1: RpcMember =
-      membersPool.find(
-        (m) =>
-          r.externalExpert1Name &&
-          m.name.toLowerCase().includes(r.externalExpert1Name.toLowerCase())
-      ) || DEMO_MEMBERS[4]; // Default Dr. Dhiraj Bhatia
+    // Resolve external expert 1 from Excel sheet data or pool
+    const matchedExt1 = r.externalExpert1Name
+      ? membersPool.find((m) => m.name.toLowerCase().includes(r.externalExpert1Name.toLowerCase()))
+      : undefined;
+    const ext1: RpcMember = matchedExt1 || (r.externalExpert1Name
+      ? {
+          id: `mem-ext1-${scholar.id}-${Date.now()}`,
+          name: r.externalExpert1Name,
+          designation: r.externalExpert1Designation || 'Associate Professor',
+          department: r.externalExpert1Dept || 'Department of Biological Science and Engineering',
+          schoolOrInstitution: r.externalExpert1Inst || 'Indian Institute of Technology Gandhinagar',
+          location: r.externalExpert1City || 'Gandhinagar',
+          email: `${r.externalExpert1Name.toLowerCase().replace(/[^a-z]/g, '.')}@external.edu`,
+          memberType: 'EXTERNAL_1',
+          isActive: true,
+          addressLine1: r.externalExpert1Designation || 'Associate Professor',
+          addressLine2: r.externalExpert1Dept || r.externalExpert1Inst || 'External University',
+          addressLine3: r.externalExpert1City || 'Gandhinagar',
+        }
+      : DEMO_MEMBERS[4]); // Default Dr. Dhiraj Bhatia
 
-    // Resolve external expert 2
-    const ext2: RpcMember =
-      membersPool.find(
-        (m) =>
-          r.externalExpert2Name &&
-          m.name.toLowerCase().includes(r.externalExpert2Name.toLowerCase())
-      ) || DEMO_MEMBERS[6]; // Default Prof. (Dr.) Sanjay K. Jain
+    // Resolve external expert 2 from Excel sheet data or pool
+    const matchedExt2 = r.externalExpert2Name
+      ? membersPool.find((m) => m.name.toLowerCase().includes(r.externalExpert2Name.toLowerCase()))
+      : undefined;
+    const ext2: RpcMember = matchedExt2 || (r.externalExpert2Name
+      ? {
+          id: `mem-ext2-${scholar.id}-${Date.now()}`,
+          name: r.externalExpert2Name,
+          designation: r.externalExpert2Designation || 'Professor & Dean',
+          department: r.externalExpert2Dept || 'School of Applied Material Science',
+          schoolOrInstitution: r.externalExpert2Inst || 'Central University of Gujarat',
+          location: r.externalExpert2City || 'Gandhinagar',
+          email: `${r.externalExpert2Name.toLowerCase().replace(/[^a-z]/g, '.')}@external.edu`,
+          memberType: 'EXTERNAL_2',
+          isActive: true,
+          addressLine1: r.externalExpert2Designation || 'Professor & Dean',
+          addressLine2: r.externalExpert2Dept || r.externalExpert2Inst || 'External University',
+          addressLine3: r.externalExpert2City || 'Gandhinagar',
+        }
+      : DEMO_MEMBERS[6]); // Default Prof. (Dr.) Sanjay K. Jain
 
     const rpcDate = r.rpcDate || new Date().toISOString().split('T')[0];
     const meetingTime = r.meetingTime || '11:00 AM IST';
@@ -1474,7 +1607,14 @@ export async function bulkImportScholarsAndRpc(
       scholar,
       formatDisplayDate(rpcDate),
       meetingTime,
-      meetingMode === 'ONLINE' ? 'online mode' : meetingMode === 'HYBRID' ? 'hybrid mode' : `physical mode at ${venue}`
+      meetingMode === 'ONLINE' ? 'online mode' : meetingMode === 'HYBRID' ? 'hybrid mode' : `physical mode at ${venue}`,
+      venue,
+      {
+        guide: guideMember,
+        internalExpert,
+        externalExpert1: ext1,
+        externalExpert2: ext2,
+      }
     );
 
     const newRecord: RpcRecord = {
@@ -1584,8 +1724,19 @@ export async function prepareAndApproveRpcLetter(
   },
   committee: {
     internalExpertName?: string;
+    internalExpertDesignation?: string;
+    internalExpertDept?: string;
+    internalExpertCampus?: string;
     externalExpert1Name?: string;
+    externalExpert1Designation?: string;
+    externalExpert1Dept?: string;
+    externalExpert1Inst?: string;
+    externalExpert1City?: string;
     externalExpert2Name?: string;
+    externalExpert2Designation?: string;
+    externalExpert2Dept?: string;
+    externalExpert2Inst?: string;
+    externalExpert2City?: string;
   },
   customRefNo: string,
   currentUser: UserProfile,
@@ -1650,26 +1801,68 @@ export async function prepareAndApproveRpcLetter(
       isActive: true,
     };
 
-  const internalExpert: RpcMember =
-    membersPool.find(
-      (m) =>
-        committee.internalExpertName &&
-        m.name.toLowerCase().includes(committee.internalExpertName.toLowerCase())
-    ) || DEMO_MEMBERS[2]; // Dr. Bhoomika Patel
+  // Resolve internal expert from imported details or pool
+  const matchedInternal = committee.internalExpertName
+    ? membersPool.find((m) => m.name.toLowerCase().includes(committee.internalExpertName!.toLowerCase()))
+    : undefined;
+  const internalExpert: RpcMember = matchedInternal || (committee.internalExpertName
+    ? {
+        id: `mem-int-${scholar.id}-${Date.now()}`,
+        name: committee.internalExpertName,
+        designation: committee.internalExpertDesignation || 'Associate Professor',
+        department: committee.internalExpertDept || scholar.department || scholar.school,
+        schoolOrInstitution: scholar.school || 'National Forensic Sciences University',
+        location: committee.internalExpertCampus || 'NFSU, Gandhinagar',
+        email: `${committee.internalExpertName.toLowerCase().replace(/[^a-z]/g, '.')}@nfsu.ac.in`,
+        memberType: 'INTERNAL',
+        isActive: true,
+        addressLine1: committee.internalExpertDesignation || 'Associate Professor',
+        addressLine2: committee.internalExpertDept || scholar.school,
+        addressLine3: committee.internalExpertCampus || 'NFSU, Gandhinagar',
+      }
+    : DEMO_MEMBERS[2]);
 
-  const ext1: RpcMember =
-    membersPool.find(
-      (m) =>
-        committee.externalExpert1Name &&
-        m.name.toLowerCase().includes(committee.externalExpert1Name.toLowerCase())
-    ) || DEMO_MEMBERS[4]; // Dr. Dhiraj Bhatia
+  // Resolve external expert 1 from imported details or pool
+  const matchedExt1 = committee.externalExpert1Name
+    ? membersPool.find((m) => m.name.toLowerCase().includes(committee.externalExpert1Name!.toLowerCase()))
+    : undefined;
+  const ext1: RpcMember = matchedExt1 || (committee.externalExpert1Name
+    ? {
+        id: `mem-ext1-${scholar.id}-${Date.now()}`,
+        name: committee.externalExpert1Name,
+        designation: committee.externalExpert1Designation || 'Associate Professor',
+        department: committee.externalExpert1Dept || 'Department of Biological Science and Engineering',
+        schoolOrInstitution: committee.externalExpert1Inst || 'Indian Institute of Technology Gandhinagar',
+        location: committee.externalExpert1City || 'Gandhinagar',
+        email: `${committee.externalExpert1Name.toLowerCase().replace(/[^a-z]/g, '.')}@external.edu`,
+        memberType: 'EXTERNAL_1',
+        isActive: true,
+        addressLine1: committee.externalExpert1Designation || 'Associate Professor',
+        addressLine2: committee.externalExpert1Dept || committee.externalExpert1Inst || 'External University',
+        addressLine3: committee.externalExpert1City || 'Gandhinagar',
+      }
+    : DEMO_MEMBERS[4]);
 
-  const ext2: RpcMember =
-    membersPool.find(
-      (m) =>
-        committee.externalExpert2Name &&
-        m.name.toLowerCase().includes(committee.externalExpert2Name.toLowerCase())
-    ) || DEMO_MEMBERS[6]; // Prof. (Dr.) Sanjay K. Jain
+  // Resolve external expert 2 from imported details or pool
+  const matchedExt2 = committee.externalExpert2Name
+    ? membersPool.find((m) => m.name.toLowerCase().includes(committee.externalExpert2Name!.toLowerCase()))
+    : undefined;
+  const ext2: RpcMember = matchedExt2 || (committee.externalExpert2Name
+    ? {
+        id: `mem-ext2-${scholar.id}-${Date.now()}`,
+        name: committee.externalExpert2Name,
+        designation: committee.externalExpert2Designation || 'Professor & Dean',
+        department: committee.externalExpert2Dept || 'School of Applied Material Science',
+        schoolOrInstitution: committee.externalExpert2Inst || 'Central University of Gujarat',
+        location: committee.externalExpert2City || 'Gandhinagar',
+        email: `${committee.externalExpert2Name.toLowerCase().replace(/[^a-z]/g, '.')}@external.edu`,
+        memberType: 'EXTERNAL_2',
+        isActive: true,
+        addressLine1: committee.externalExpert2Designation || 'Professor & Dean',
+        addressLine2: committee.externalExpert2Dept || committee.externalExpert2Inst || 'External University',
+        addressLine3: committee.externalExpert2City || 'Gandhinagar',
+      }
+    : DEMO_MEMBERS[6]);
 
   // 3. Construct official letter payload
   const formattedDate = formatDisplayDate(schedule.rpcDate);
@@ -1691,7 +1884,7 @@ export async function prepareAndApproveRpcLetter(
     internalExpertName: internalExpert.name,
     internalExpertDesignation: internalExpert.designation,
     internalExpertDept: internalExpert.department,
-    internalExpertCampus: internalExpert.schoolOrInstitution,
+    internalExpertCampus: internalExpert.location || internalExpert.schoolOrInstitution,
     externalExpert1Name: ext1.name,
     externalExpert1Designation: ext1.designation,
     externalExpert1Dept: ext1.department,

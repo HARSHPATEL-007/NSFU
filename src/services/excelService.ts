@@ -18,15 +18,41 @@ export interface ParsedRpcRow {
   errors: string[];
   enrollmentNo: string;
   scholarName?: string;
+  school?: string;
+  department?: string;
   rpcNumber: number;
   rpcDate: string;
   meetingTime: string;
   meetingMode: 'ONLINE' | 'OFFLINE' | 'HYBRID';
   venue: string;
   guideName?: string;
+  guideDesignation?: string;
+  guideSchool?: string;
+  guideEmail?: string;
+  coGuideName?: string;
+  researchTopic?: string;
   internalExpertName?: string;
+  internalExpertDesignation?: string;
+  internalExpertDepartment?: string;
+  internalExpertDept?: string;
+  internalExpertLocation?: string;
+  internalExpertCampus?: string;
   externalExpert1Name?: string;
+  externalExpert1Designation?: string;
+  externalExpert1Department?: string;
+  externalExpert1Dept?: string;
+  externalExpert1Institution?: string;
+  externalExpert1Inst?: string;
+  externalExpert1Location?: string;
+  externalExpert1City?: string;
   externalExpert2Name?: string;
+  externalExpert2Designation?: string;
+  externalExpert2Department?: string;
+  externalExpert2Dept?: string;
+  externalExpert2Institution?: string;
+  externalExpert2Inst?: string;
+  externalExpert2Location?: string;
+  externalExpert2City?: string;
   notes?: string;
 }
 
@@ -124,9 +150,27 @@ export function parseSingleSheetData(
   const rawHeaders: string[] = rawData[0] || [];
   const normalizedHeaders = rawHeaders.map(normalizeHeader);
 
+  // Check if header is something like "01 RPC", "1st RPC", "RPC 01"
+  let detectedRpcStageFromHeader: number | undefined = undefined;
+  rawHeaders.forEach((rawH) => {
+    const str = String(rawH).trim();
+    const rpcMatch = str.match(/(\d+)\s*(?:st|nd|rd|th)?\s*rpc/i) || str.match(/rpc\s*(\d+)/i);
+    if (rpcMatch) {
+      detectedRpcStageFromHeader = parseInt(rpcMatch[1], 10);
+    }
+  });
+
   // Detect if this sheet is Scholars or RPC Requests
   const isRpcSheet =
-    normalizedHeaders.some((h) => h.includes('rpcnumber') || h.includes('rpcstage')) ||
+    detectedRpcStageFromHeader !== undefined ||
+    normalizedHeaders.some((h) =>
+      h.includes('rpcnumber') ||
+      h.includes('rpcstage') ||
+      h.includes('rpcletter') ||
+      h.includes('internalexpert') ||
+      h.includes('externalexpert') ||
+      (h.includes('rpc') && !h.includes('currentrpc'))
+    ) ||
     sheetName.toLowerCase().includes('rpc') ||
     sheetName.toLowerCase().includes('schedule');
 
@@ -136,29 +180,50 @@ export function parseSingleSheetData(
 
   // Map column index to field
   const colMap: Record<string, number> = {};
+
   normalizedHeaders.forEach((h, idx) => {
-    // Enrollment
-    if (h.includes('enroll') || h.includes('regno') || h.includes('registrationno') || h === 'id') {
-      colMap['enrollmentNo'] = idx;
+    // Enrollment / Registration / Roll No
+    if (
+      h.includes('enroll') ||
+      h.includes('regno') ||
+      h.includes('registrationno') ||
+      h.includes('rollno') ||
+      h.includes('enrolment') ||
+      (h === 'id' && colMap['enrollmentNo'] === undefined)
+    ) {
+      if (colMap['enrollmentNo'] === undefined) colMap['enrollmentNo'] = idx;
     }
-    // Scholar Name
-    else if (h.includes('scholarname') || h.includes('studentname') || (h.includes('name') && !h.includes('guide') && !h.includes('expert') && !h.includes('school'))) {
-      colMap['name'] = idx;
+    // Scholar Name (e.g. "Scholar Name", "Candidate Name", "Student Name", "Name")
+    else if (
+      h.includes('scholarname') ||
+      h.includes('studentname') ||
+      h.includes('candidatename') ||
+      h === 'name' ||
+      (h.includes('name') && !h.includes('guide') && !h.includes('expert') && !h.includes('school') && !h.includes('dept') && colMap['name'] === undefined)
+    ) {
+      if (colMap['name'] === undefined) colMap['name'] = idx;
     }
-    // School
-    else if (h.includes('school') && !h.includes('guide')) {
-      colMap['school'] = idx;
+    // School (e.g. "Name of School", "School", "Institute")
+    else if (h.includes('nameofschool') || h.includes('institute') || (h.includes('school') && !h.includes('guide') && colMap['school'] === undefined)) {
+      if (colMap['school'] === undefined) colMap['school'] = idx;
     }
     // Department
-    else if (h.includes('department') || h.includes('dept')) {
-      colMap['department'] = idx;
+    else if (h.includes('department') || h.includes('dept') || h.includes('discipline') || h.includes('branch')) {
+      if (colMap['department'] === undefined) colMap['department'] = idx;
     }
     // Guide Name
-    else if (h.includes('guidename') || h.includes('supervisorname') || (h.includes('guide') && !h.includes('email') && !h.includes('desig') && !h.includes('school') && !h.includes('co'))) {
-      colMap['guideName'] = idx;
+    else if (
+      h.includes('guidename') ||
+      h.includes('supervisorname') ||
+      h.includes('researchguide') ||
+      h.includes('nameofguide') ||
+      (h.includes('guide') && !h.includes('email') && !h.includes('desig') && !h.includes('school') && !h.includes('co') && colMap['guideName'] === undefined) ||
+      (h === 'supervisor' && colMap['guideName'] === undefined)
+    ) {
+      if (colMap['guideName'] === undefined) colMap['guideName'] = idx;
     }
     // Guide Designation
-    else if (h.includes('guidedesig') || h.includes('supervisordesig')) {
+    else if (h.includes('guidedesig') || h.includes('supervisordesig') || h.includes('guidedesignation') || h.includes('supervisordesignation')) {
       colMap['guideDesignation'] = idx;
     }
     // Guide Email
@@ -166,20 +231,20 @@ export function parseSingleSheetData(
       colMap['guideEmail'] = idx;
     }
     // Guide School
-    else if (h.includes('guideschool') || h.includes('supervisorschool')) {
+    else if (h.includes('guideschool') || h.includes('supervisorschool') || h.includes('guidedept')) {
       colMap['guideSchool'] = idx;
     }
     // Co-guide
-    else if (h.includes('coguide') || h.includes('cosupervisor')) {
+    else if (h.includes('coguide') || h.includes('cosupervisor') || h.includes('coguidesupervisor')) {
       colMap['coGuideName'] = idx;
     }
     // Registration Date
     else if (h.includes('regdate') || h.includes('admissiondate') || h.includes('registrationdate')) {
       colMap['registrationDate'] = idx;
     }
-    // Research Topic
-    else if (h.includes('topic') || h.includes('title') || h.includes('research')) {
-      colMap['researchTopic'] = idx;
+    // Research Topic / Title / Synopsis
+    else if (h.includes('topic') || h.includes('title') || h.includes('researchtitle') || (h.includes('research') && !h.includes('guide'))) {
+      if (colMap['researchTopic'] === undefined) colMap['researchTopic'] = idx;
     }
     // Contact Email
     else if ((h.includes('email') || h.includes('mail')) && !h.includes('guide')) {
@@ -190,60 +255,104 @@ export function parseSingleSheetData(
       colMap['phone'] = idx;
     }
     // Current RPC No
-    else if (h.includes('currentrpc') || h.includes('rpcno') || h.includes('nextrpc')) {
+    else if (h.includes('currentrpc') || h.includes('nextrpc')) {
       colMap['currentRpcNo'] = idx;
     }
-    // RPC Number
-    else if (h.includes('rpcnumber') || h.includes('rpcstage')) {
-      colMap['rpcNumber'] = idx;
+    // RPC Number column
+    else if (
+      h.includes('rpcnumber') ||
+      h.includes('rpcstage') ||
+      h.includes('rpcno') ||
+      h.includes('meetingno') ||
+      h.includes('stage') ||
+      /(\d+)rpc/i.test(h) ||
+      /rpc(\d+)/i.test(h) ||
+      h === 'rpc'
+    ) {
+      if (colMap['rpcNumber'] === undefined) colMap['rpcNumber'] = idx;
     }
-    // RPC Date
-    else if (h.includes('rpcdate') || h.includes('meetingdate') || h.includes('scheduledate')) {
-      colMap['rpcDate'] = idx;
+    // RPC Date (Meeting / scheduled evaluation date)
+    else if (h === 'date' || h.includes('rpcdate') || h.includes('meetingdate') || h.includes('scheduledate') || h.includes('dateofrpc')) {
+      if (colMap['rpcDate'] === undefined) colMap['rpcDate'] = idx;
     }
     // Meeting Time
-    else if (h.includes('time') || h.includes('meetingtime')) {
-      colMap['meetingTime'] = idx;
+    else if (h === 'time' || h.includes('meetingtime') || h.includes('scheduletime') || h.includes('timeofrpc')) {
+      if (colMap['meetingTime'] === undefined) colMap['meetingTime'] = idx;
     }
     // Meeting Mode
-    else if (h.includes('mode') || h.includes('meetingmode')) {
+    else if (h === 'mode' || h.includes('meetingmode') || h.includes('modeofmeeting')) {
       colMap['meetingMode'] = idx;
     }
-    // Venue
-    else if (h.includes('venue') || h.includes('location') || h.includes('link')) {
-      colMap['venue'] = idx;
+    // Venue / Meeting Link
+    else if (h.includes('venue') || h.includes('meetinglink') || h.includes('platform') || (h.includes('link') && !h.includes('external')) || h === 'location') {
+      if (colMap['venue'] === undefined) colMap['venue'] = idx;
     }
-    // Internal Expert
-    else if (h.includes('internal') && (h.includes('expert') || h.includes('member') || h.includes('name'))) {
-      colMap['internalExpert'] = idx;
+    // Notes / Synopsis / Remarks
+    else if (h.includes('note') || h.includes('remark') || h.includes('detail') || h.includes('synopsis') || h.includes('comment')) {
+      if (colMap['notes'] === undefined) colMap['notes'] = idx;
     }
-    // External Expert 1
-    else if ((h.includes('external1') || h.includes('expert1') || h.includes('externalexpert1')) && !h.includes('2')) {
-      colMap['externalExpert1'] = idx;
+    // Committee Members explicit columns
+    else if (h.includes('internal') && (h.includes('expert') || h.includes('member') || h.includes('drc'))) {
+      if (h.includes('desig')) colMap['internalExpertDesignation'] = idx;
+      else if (h.includes('dept') || h.includes('school')) colMap['internalExpertDept'] = idx;
+      else if (h.includes('campus') || h.includes('city') || h.includes('loc')) colMap['internalExpertCampus'] = idx;
+      else if (colMap['internalExpert'] === undefined) colMap['internalExpert'] = idx;
     }
-    // External Expert 2
-    else if (h.includes('external2') || h.includes('expert2') || h.includes('externalexpert2')) {
-      colMap['externalExpert2'] = idx;
+    else if (h.includes('external') && (h.includes('1') || h.includes('one') || h.includes('first')) && (h.includes('expert') || h.includes('member'))) {
+      if (h.includes('desig')) colMap['externalExpert1Designation'] = idx;
+      else if (h.includes('uni') || h.includes('inst')) colMap['externalExpert1Inst'] = idx;
+      else if (h.includes('dept') || h.includes('school')) colMap['externalExpert1Dept'] = idx;
+      else if (h.includes('campus') || h.includes('city') || h.includes('loc')) colMap['externalExpert1City'] = idx;
+      else if (colMap['externalExpert1'] === undefined) colMap['externalExpert1'] = idx;
     }
-    // Degree
-    else if (h.includes('degree') || h.includes('qualifying')) {
-      colMap['qualifyingDegree'] = idx;
+    else if (h.includes('external') && (h.includes('2') || h.includes('two') || h.includes('second')) && (h.includes('expert') || h.includes('member'))) {
+      if (h.includes('desig')) colMap['externalExpert2Designation'] = idx;
+      else if (h.includes('uni') || h.includes('inst')) colMap['externalExpert2Inst'] = idx;
+      else if (h.includes('dept') || h.includes('school')) colMap['externalExpert2Dept'] = idx;
+      else if (h.includes('campus') || h.includes('city') || h.includes('loc')) colMap['externalExpert2City'] = idx;
+      else if (colMap['externalExpert2'] === undefined) colMap['externalExpert2'] = idx;
     }
-    // University
-    else if (h.includes('university') || h.includes('univ')) {
-      colMap['university'] = idx;
+  });
+
+  // Second pass: Multi-column expert blocks (NFSU Official Format)
+  // Safely check if adjacent columns are actually address subheaders (not other recognized headers)
+  const isAddressOrSubheader = (colIdx: number) => {
+    if (colIdx >= rawHeaders.length) return false;
+    const norm = normalizeHeader(rawHeaders[colIdx]);
+    if (!norm) return true; // empty header is likely an address subheader
+    if (
+      norm.includes('address') ||
+      norm.includes('addr') ||
+      norm.includes('desig') ||
+      norm.includes('dept') ||
+      norm.includes('campus') ||
+      norm.includes('city') ||
+      norm.includes('inst')
+    ) {
+      return true;
     }
-    // Category
-    else if (h.includes('category') || h.includes('admissiontype')) {
-      colMap['category'] = idx;
-    }
-    // Fellowship
-    else if (h.includes('fellowship') || h.includes('funding')) {
-      colMap['fellowship'] = idx;
-    }
-    // Notes
-    else if (h.includes('note') || h.includes('remark') || h.includes('detail')) {
-      colMap['notes'] = idx;
+    return false;
+  };
+
+  rawHeaders.forEach((rawH, idx) => {
+    const h = normalizeHeader(rawH);
+    if (!h) return;
+
+    if (h.includes('internal') && (h.includes('expert') || h.includes('member')) && !h.includes('desig') && !h.includes('dept')) {
+      if (colMap['internalExpert'] === undefined) colMap['internalExpert'] = idx;
+      if (colMap['internalExpertDesignation'] === undefined && isAddressOrSubheader(idx + 1)) colMap['internalExpertDesignation'] = idx + 1;
+      if (colMap['internalExpertDept'] === undefined && isAddressOrSubheader(idx + 2)) colMap['internalExpertDept'] = idx + 2;
+      if (colMap['internalExpertCampus'] === undefined && isAddressOrSubheader(idx + 3)) colMap['internalExpertCampus'] = idx + 3;
+    } else if (h.includes('external') && (h.includes('1') || h.includes('one')) && (h.includes('expert') || h.includes('member')) && !h.includes('2') && !h.includes('desig') && !h.includes('dept')) {
+      if (colMap['externalExpert1'] === undefined) colMap['externalExpert1'] = idx;
+      if (colMap['externalExpert1Designation'] === undefined && isAddressOrSubheader(idx + 1)) colMap['externalExpert1Designation'] = idx + 1;
+      if (colMap['externalExpert1Dept'] === undefined && isAddressOrSubheader(idx + 2)) colMap['externalExpert1Dept'] = idx + 2;
+      if (colMap['externalExpert1City'] === undefined && isAddressOrSubheader(idx + 3)) colMap['externalExpert1City'] = idx + 3;
+    } else if (h.includes('external') && (h.includes('2') || h.includes('two')) && (h.includes('expert') || h.includes('member')) && !h.includes('desig') && !h.includes('dept')) {
+      if (colMap['externalExpert2'] === undefined) colMap['externalExpert2'] = idx;
+      if (colMap['externalExpert2Designation'] === undefined && isAddressOrSubheader(idx + 1)) colMap['externalExpert2Designation'] = idx + 1;
+      if (colMap['externalExpert2Dept'] === undefined && isAddressOrSubheader(idx + 2)) colMap['externalExpert2Dept'] = idx + 2;
+      if (colMap['externalExpert2City'] === undefined && isAddressOrSubheader(idx + 3)) colMap['externalExpert2City'] = idx + 3;
     }
   });
 
@@ -256,11 +365,18 @@ export function parseSingleSheetData(
     if (isRpcSheet) {
       // Parse RPC Request row
       const enrollmentNo = String(row[colMap['enrollmentNo']] ?? '').trim();
-      const rpcNumRaw = row[colMap['rpcNumber']];
-      let rpcNumber = parseInt(String(rpcNumRaw).replace(/[^0-9]/g, ''), 10);
-      if (isNaN(rpcNumber) || rpcNumber < 1) rpcNumber = 1;
+      const scholarName = String(row[colMap['name']] ?? '').trim();
+      const school = String(row[colMap['school']] ?? 'School of Forensic Science').trim();
+      const department = String(row[colMap['department']] ?? school).trim();
+      const guideName = String(row[colMap['guideName']] ?? '').trim();
 
-      const rpcDateRaw = row[colMap['rpcDate']];
+      const rpcNumRaw = colMap['rpcNumber'] !== undefined ? row[colMap['rpcNumber']] : undefined;
+      let rpcNumber = parseInt(String(rpcNumRaw).replace(/[^0-9]/g, ''), 10);
+      if (isNaN(rpcNumber) || rpcNumber < 1) {
+        rpcNumber = detectedRpcStageFromHeader || 1;
+      }
+
+      const rpcDateRaw = colMap['rpcDate'] !== undefined ? row[colMap['rpcDate']] : undefined;
       const rpcDate = formatExcelDate(rpcDateRaw) || new Date().toISOString().split('T')[0];
       const meetingTime = String(row[colMap['meetingTime']] ?? '11:00 AM IST').trim();
 
@@ -270,34 +386,117 @@ export function parseSingleSheetData(
       else if (modeRaw.includes('HYB')) meetingMode = 'HYBRID';
 
       const venue = String(row[colMap['venue']] ?? 'SDSR Board Room / Google Meet').trim();
-      const scholarName = String(row[colMap['name']] ?? '').trim();
+
+      const internalExpertName = String(row[colMap['internalExpert']] ?? '').trim();
+      const internalExpertDesignation = String(row[colMap['internalExpertDesignation']] ?? 'Associate Professor').trim();
+      const internalExpertDepartment = String(row[colMap['internalExpertDept']] ?? school).trim();
+      const internalExpertLocation = String(row[colMap['internalExpertCampus']] ?? 'NFSU, Gandhinagar').trim();
+
+      const externalExpert1Name = String(row[colMap['externalExpert1']] ?? '').trim();
+      const externalExpert1Designation = String(row[colMap['externalExpert1Designation']] ?? 'Associate Professor').trim();
+      const externalExpert1Department = String(row[colMap['externalExpert1Dept']] ?? 'External Department').trim();
+      const externalExpert1Institution = String(
+        row[colMap['externalExpert1Inst']] ??
+        row[colMap['externalExpert1Dept']] ??
+        'External University'
+      ).trim();
+      const externalExpert1Location = String(row[colMap['externalExpert1City']] ?? 'External Location').trim();
+
+      const externalExpert2Name = String(row[colMap['externalExpert2']] ?? '').trim();
+      const externalExpert2Designation = String(row[colMap['externalExpert2Designation']] ?? 'Professor').trim();
+      const externalExpert2Department = String(row[colMap['externalExpert2Dept']] ?? 'External Department').trim();
+      const externalExpert2Institution = String(
+        row[colMap['externalExpert2Inst']] ??
+        row[colMap['externalExpert2Dept']] ??
+        'External University'
+      ).trim();
+      const externalExpert2Location = String(row[colMap['externalExpert2City']] ?? 'External Location').trim();
 
       const errors: string[] = [];
-      if (!enrollmentNo) {
-        errors.push('Enrollment No is missing');
+      if (!enrollmentNo && !scholarName) {
+        errors.push('Both Enrollment No and Scholar Name are missing');
       }
 
-      const matchedScholar = existingMap.get(enrollmentNo.toLowerCase());
-      if (!matchedScholar && !scholarName) {
-        errors.push(`Scholar with enrollment "${enrollmentNo}" not found in system`);
-      }
+      const matchedScholar =
+        existingMap.get(enrollmentNo.toLowerCase()) ||
+        (scholarName ? existingMap.get(scholarName.toLowerCase()) : undefined);
 
       rpcRows.push({
         rowIndex: r + 1,
         isValid: errors.length === 0,
         errors,
-        enrollmentNo,
+        enrollmentNo: enrollmentNo || matchedScholar?.enrollmentNo || '',
         scholarName: scholarName || matchedScholar?.name || 'Unknown Scholar',
+        school: school || matchedScholar?.school || 'School of Forensic Science',
+        department: department || matchedScholar?.department || school,
         rpcNumber,
         rpcDate,
         meetingTime,
         meetingMode,
         venue,
-        guideName: String(row[colMap['guideName']] ?? matchedScholar?.guideName ?? '').trim(),
-        internalExpertName: String(row[colMap['internalExpert']] ?? '').trim(),
-        externalExpert1Name: String(row[colMap['externalExpert1']] ?? '').trim(),
-        externalExpert2Name: String(row[colMap['externalExpert2']] ?? '').trim(),
+        guideName: guideName || matchedScholar?.guideName || 'Research Supervisor',
+        guideDesignation: String(row[colMap['guideDesignation']] ?? matchedScholar?.guideDesignation ?? 'Professor').trim(),
+        guideSchool: school || matchedScholar?.guideSchool || school,
+        guideEmail: String(row[colMap['guideEmail']] ?? matchedScholar?.guideEmail ?? '').trim() || undefined,
+        coGuideName: String(row[colMap['coGuideName']] ?? matchedScholar?.coGuideName ?? '').trim() || undefined,
+        researchTopic: String(row[colMap['researchTopic']] ?? row[colMap['notes']] ?? matchedScholar?.researchTopic ?? '').trim() || undefined,
+        internalExpertName,
+        internalExpertDesignation,
+        internalExpertDepartment,
+        internalExpertDept: internalExpertDepartment,
+        internalExpertLocation,
+        internalExpertCampus: internalExpertLocation,
+        externalExpert1Name,
+        externalExpert1Designation,
+        externalExpert1Department,
+        externalExpert1Dept: externalExpert1Department,
+        externalExpert1Institution,
+        externalExpert1Inst: externalExpert1Institution,
+        externalExpert1Location,
+        externalExpert1City: externalExpert1Location,
+        externalExpert2Name,
+        externalExpert2Designation,
+        externalExpert2Department,
+        externalExpert2Dept: externalExpert2Department,
+        externalExpert2Institution,
+        externalExpert2Inst: externalExpert2Institution,
+        externalExpert2Location,
+        externalExpert2City: externalExpert2Location,
         notes: String(row[colMap['notes']] ?? '').trim(),
+      });
+
+      // Also ensure scholar is available as a scholarRow
+      scholarRows.push({
+        rowIndex: r + 1,
+        isValid: Boolean(enrollmentNo || scholarName),
+        errors: [],
+        scholar: {
+          id: matchedScholar?.id || `sch-${enrollmentNo.toLowerCase().replace(/[^a-z0-9]/g, '') || String(r)}`,
+          name: scholarName || matchedScholar?.name || 'Ph.D. Scholar',
+          enrollmentNo: enrollmentNo || matchedScholar?.enrollmentNo || '',
+          school: school || matchedScholar?.school || 'School of Forensic Science',
+          department: department || matchedScholar?.department || school,
+          guideName: guideName || matchedScholar?.guideName || 'Research Supervisor',
+          guideDesignation: String(row[colMap['guideDesignation']] ?? matchedScholar?.guideDesignation ?? 'Professor').trim(),
+          guideEmail: String(row[colMap['guideEmail']] ?? matchedScholar?.guideEmail ?? `${(scholarName || 'scholar').toLowerCase().replace(/[^a-z]/g, '.')}@nfsu.ac.in`).trim(),
+          guideSchool: school || matchedScholar?.guideSchool || school,
+          coGuideName: String(row[colMap['coGuideName']] ?? matchedScholar?.coGuideName ?? '').trim() || undefined,
+          registrationDate: formatExcelDate(row[colMap['registrationDate']]) || new Date().toISOString().split('T')[0],
+          researchTopic: String(row[colMap['researchTopic']] ?? row[colMap['notes']] ?? matchedScholar?.researchTopic ?? 'Doctoral Research Study at NFSU').trim(),
+          currentRpcNo: rpcNumber,
+          status: 'ACTIVE',
+          contactDetails: {
+            email: `${(enrollmentNo || 'scholar').toLowerCase()}@nfsu.ac.in`,
+            phone: '+91-9800000000',
+            address: 'NFSU Gandhinagar Campus, Sector-9, Gandhinagar 382007',
+          },
+          academicDetails: {
+            qualifyingDegree: "Master's Degree",
+            university: 'Recognized University',
+            yearOfPassing: String(new Date().getFullYear() - 1),
+            category: 'Regular Full-Time',
+          },
+        },
       });
     } else {
       // Parse Scholar row
@@ -711,14 +910,26 @@ export interface StudentMatchItem {
   guideDesignation?: string;
   guideEmail?: string;
   guideSchool?: string;
+  coGuideName?: string;
   rpcNumber: number;
   rpcDate: string;
   meetingTime: string;
   meetingMode: 'ONLINE' | 'OFFLINE' | 'HYBRID';
   venue: string;
   internalExpertName?: string;
+  internalExpertDesignation?: string;
+  internalExpertDept?: string;
+  internalExpertCampus?: string;
   externalExpert1Name?: string;
+  externalExpert1Designation?: string;
+  externalExpert1Inst?: string;
+  externalExpert1Dept?: string;
+  externalExpert1City?: string;
   externalExpert2Name?: string;
+  externalExpert2Designation?: string;
+  externalExpert2Inst?: string;
+  externalExpert2Dept?: string;
+  externalExpert2City?: string;
   researchTopic?: string;
   notes?: string;
   matchStatus: 'EXACT_MATCH' | 'NAME_MATCH' | 'NEW_STUDENT';
@@ -863,9 +1074,21 @@ export function matchStudentData(
         meetingMode: r.meetingMode || 'ONLINE',
         venue: r.venue || 'SDSR Board Room / Google Meet',
         internalExpertName: r.internalExpertName || 'Dr. Bhoomika Patel',
+        internalExpertDesignation: r.internalExpertDesignation || 'Dean (I/C), SPH',
+        internalExpertDept: r.internalExpertDept || r.internalExpertDepartment || 'School of Pharmacy',
+        internalExpertCampus: r.internalExpertCampus || r.internalExpertLocation || 'NFSU, Gandhinagar',
         externalExpert1Name: r.externalExpert1Name || 'Dr. Dhiraj Bhatia',
+        externalExpert1Designation: r.externalExpert1Designation || 'Associate Professor',
+        externalExpert1Inst: r.externalExpert1Inst || r.externalExpert1Institution || 'Indian Institute of Technology Gandhinagar',
+        externalExpert1Dept: r.externalExpert1Dept || r.externalExpert1Department || 'Department of Biological Science and Engineering',
+        externalExpert1City: r.externalExpert1City || r.externalExpert1Location || 'Gandhinagar',
         externalExpert2Name: r.externalExpert2Name || 'Prof. (Dr.) Sanjay K. Jain',
-        researchTopic: existingScholar?.researchTopic,
+        externalExpert2Designation: r.externalExpert2Designation || 'Professor & Dean',
+        externalExpert2Inst: r.externalExpert2Inst || r.externalExpert2Institution || 'Central University of Gujarat',
+        externalExpert2Dept: r.externalExpert2Dept || r.externalExpert2Department || 'School of Applied Material Science',
+        externalExpert2City: r.externalExpert2City || r.externalExpert2Location || 'Gandhinagar',
+        coGuideName: r.coGuideName,
+        researchTopic: r.researchTopic || existingScholar?.researchTopic,
         notes: r.notes,
         matchStatus,
         existingScholar,
@@ -959,8 +1182,19 @@ export function matchStudentData(
         meetingMode: 'ONLINE',
         venue: 'SDSR Board Room / Google Meet',
         internalExpertName: 'Dr. Bhoomika Patel',
+        internalExpertDesignation: 'Dean (I/C), SPH',
+        internalExpertDept: 'School of Pharmacy',
+        internalExpertCampus: 'NFSU, Gandhinagar',
         externalExpert1Name: 'Dr. Dhiraj Bhatia',
+        externalExpert1Designation: 'Associate Professor',
+        externalExpert1Inst: 'Indian Institute of Technology Gandhinagar',
+        externalExpert1Dept: 'Department of Biological Science and Engineering',
+        externalExpert1City: 'Gandhinagar',
         externalExpert2Name: 'Prof. (Dr.) Sanjay K. Jain',
+        externalExpert2Designation: 'Professor & Dean',
+        externalExpert2Inst: 'Central University of Gujarat',
+        externalExpert2Dept: 'School of Applied Material Science',
+        externalExpert2City: 'Gandhinagar',
         researchTopic: s.researchTopic,
         matchStatus,
         existingScholar,
@@ -1395,19 +1629,41 @@ export interface ExcelRosterCandidate {
   guideDesignation: string;
   guideEmail?: string;
   guideSchool?: string;
+  coGuideName?: string;
+  researchTopic?: string;
   rpcNumber: number;
   rpcDate: string;
   meetingTime: string;
   meetingMode: 'ONLINE' | 'OFFLINE' | 'HYBRID';
   venue: string;
   internalExpertName?: string;
+  internalExpertDesignation?: string;
+  internalExpertDepartment?: string;
+  internalExpertDept?: string;
+  internalExpertLocation?: string;
+  internalExpertCampus?: string;
   externalExpert1Name?: string;
+  externalExpert1Designation?: string;
+  externalExpert1Department?: string;
+  externalExpert1Dept?: string;
+  externalExpert1Institution?: string;
+  externalExpert1Inst?: string;
+  externalExpert1Location?: string;
+  externalExpert1City?: string;
   externalExpert2Name?: string;
+  externalExpert2Designation?: string;
+  externalExpert2Department?: string;
+  externalExpert2Dept?: string;
+  externalExpert2Institution?: string;
+  externalExpert2Inst?: string;
+  externalExpert2Location?: string;
+  externalExpert2City?: string;
   notes?: string;
   sourceSheetName: string;
   sourceFileName: string;
   isExistingInDb: boolean;
   matchedScholarId?: string;
+  rowIndex?: number;
 }
 
 const LOCAL_STORAGE_EXCEL_SHEETS_KEY = 'nfsu_shared_loaded_excel_sheets';
@@ -1442,14 +1698,14 @@ export function getSharedLoadedFiles(): LoadedExcelFile[] {
   return memorySharedLoadedFiles;
 }
 
-export function setSharedLoadedData(files: LoadedExcelFile[], sheets: LoadedExcelSheet[]): void {
+export function setSharedLoadedData(files: LoadedExcelFile[], sheets: LoadedExcelSheet[], source?: string): void {
   memorySharedLoadedFiles = files;
   memorySharedLoadedSheets = sheets;
   if (typeof window !== 'undefined') {
     try {
       localStorage.setItem(LOCAL_STORAGE_EXCEL_FILES_KEY, JSON.stringify(files));
       localStorage.setItem(LOCAL_STORAGE_EXCEL_SHEETS_KEY, JSON.stringify(sheets));
-      window.dispatchEvent(new CustomEvent('nfsu-excel-data-updated', { detail: { files, sheets } }));
+      window.dispatchEvent(new CustomEvent('nfsu-excel-data-updated', { detail: { files, sheets, source } }));
     } catch (e) {
       console.warn('Error saving Excel data to localStorage:', e);
     }
@@ -1547,15 +1803,6 @@ export function getLoadedExcelRosterCandidates(existingScholars: Scholar[]): Exc
         .trim()
         .toLowerCase()
         .replace(/^dr\.\s*|^mr\.\s*|^ms\.\s*|^mrs\.\s*/i, '');
-      if (
-        normName.includes('devanshi') ||
-        normName.includes('richard') ||
-        normEnroll === '240114002015' ||
-        normEnroll === '240112006037' ||
-        normEnroll === '240112006033'
-      ) {
-        return;
-      }
       const key = `${normEnroll || normName}-rpc-${r.rpcNumber}`;
       if (seenKeys.has(key)) return;
       seenKeys.add(key);
@@ -1568,25 +1815,47 @@ export function getLoadedExcelRosterCandidates(existingScholars: Scholar[]): Exc
         id: `cand-${sheet.id}-${idx}`,
         enrollmentNo: r.enrollmentNo || dbMatch?.enrollmentNo || '',
         scholarName: r.scholarName || dbMatch?.name || 'Unknown Scholar',
-        school: dbMatch?.school || 'School of Forensic Science',
-        department: dbMatch?.department || dbMatch?.school || 'Doctoral Studies and Research',
+        school: r.school || dbMatch?.school || 'School of Forensic Science',
+        department: r.department || dbMatch?.department || dbMatch?.school || 'Doctoral Studies and Research',
         guideName: r.guideName || dbMatch?.guideName || 'Prof. Guide',
-        guideDesignation: dbMatch?.guideDesignation || 'Professor',
-        guideEmail: dbMatch?.guideEmail,
-        guideSchool: dbMatch?.guideSchool || dbMatch?.school,
+        guideDesignation: r.guideDesignation || dbMatch?.guideDesignation || 'Professor',
+        guideEmail: r.guideEmail || dbMatch?.guideEmail,
+        guideSchool: r.guideSchool || dbMatch?.guideSchool || dbMatch?.school,
+        coGuideName: r.coGuideName || dbMatch?.coGuideName,
+        researchTopic: r.researchTopic || dbMatch?.researchTopic || r.notes,
         rpcNumber: r.rpcNumber || dbMatch?.currentRpcNo || 1,
         rpcDate: r.rpcDate || new Date().toISOString().split('T')[0],
         meetingTime: r.meetingTime || '11:30 AM',
         meetingMode: r.meetingMode || 'ONLINE',
         venue: r.venue || 'SDSR Board Room / Google Meet',
         internalExpertName: r.internalExpertName,
+        internalExpertDesignation: r.internalExpertDesignation,
+        internalExpertDepartment: r.internalExpertDepartment,
+        internalExpertDept: r.internalExpertDept || r.internalExpertDepartment,
+        internalExpertLocation: r.internalExpertLocation,
+        internalExpertCampus: r.internalExpertCampus || r.internalExpertLocation,
         externalExpert1Name: r.externalExpert1Name,
+        externalExpert1Designation: r.externalExpert1Designation,
+        externalExpert1Department: r.externalExpert1Department,
+        externalExpert1Dept: r.externalExpert1Dept || r.externalExpert1Department,
+        externalExpert1Institution: r.externalExpert1Institution,
+        externalExpert1Inst: r.externalExpert1Inst || r.externalExpert1Institution,
+        externalExpert1Location: r.externalExpert1Location,
+        externalExpert1City: r.externalExpert1City || r.externalExpert1Location,
         externalExpert2Name: r.externalExpert2Name,
+        externalExpert2Designation: r.externalExpert2Designation,
+        externalExpert2Department: r.externalExpert2Department,
+        externalExpert2Dept: r.externalExpert2Dept || r.externalExpert2Department,
+        externalExpert2Institution: r.externalExpert2Institution,
+        externalExpert2Inst: r.externalExpert2Inst || r.externalExpert2Institution,
+        externalExpert2Location: r.externalExpert2Location,
+        externalExpert2City: r.externalExpert2City || r.externalExpert2Location,
         notes: r.notes,
         sourceSheetName: sheet.sheetName,
         sourceFileName: sheet.fileName,
         isExistingInDb: !!dbMatch,
         matchedScholarId: dbMatch?.id,
+        rowIndex: r.rowIndex,
       });
     });
 
@@ -1598,15 +1867,6 @@ export function getLoadedExcelRosterCandidates(existingScholars: Scholar[]): Exc
         .trim()
         .toLowerCase()
         .replace(/^dr\.\s*|^mr\.\s*|^ms\.\s*|^mrs\.\s*/i, '');
-      if (
-        normName.includes('devanshi') ||
-        normName.includes('richard') ||
-        normEnroll === '240114002015' ||
-        normEnroll === '240112006037' ||
-        normEnroll === '240112006033'
-      ) {
-        return;
-      }
       const key = `${normEnroll || normName}-rpc-${s.currentRpcNo || 1}`;
       if (seenKeys.has(key)) return;
       seenKeys.add(key);
@@ -1625,6 +1885,8 @@ export function getLoadedExcelRosterCandidates(existingScholars: Scholar[]): Exc
         guideDesignation: s.guideDesignation || 'Professor',
         guideEmail: s.guideEmail,
         guideSchool: s.guideSchool || s.school,
+        coGuideName: s.coGuideName,
+        researchTopic: s.researchTopic,
         rpcNumber: s.currentRpcNo || 1,
         rpcDate: new Date().toISOString().split('T')[0],
         meetingTime: '11:30 AM',
@@ -1634,6 +1896,7 @@ export function getLoadedExcelRosterCandidates(existingScholars: Scholar[]): Exc
         sourceFileName: sheet.fileName,
         isExistingInDb: !!dbMatch,
         matchedScholarId: dbMatch?.id,
+        rowIndex: sRow.rowIndex,
       });
     });
   });

@@ -21,7 +21,8 @@ import {
   getAllMembers,
   saveAllPortalWork,
 } from '../services/dataService';
-import { formatDisplayDate } from '../utils/dateUtils';
+import { formatDisplayDate, getOrdinalText } from '../utils/dateUtils';
+import { ChangeRpcNumberModal } from './ChangeRpcNumberModal';
 import {
   ArrowLeft,
   Calendar,
@@ -43,6 +44,7 @@ import {
   ShieldCheck,
   Loader2,
   Save,
+  Hash,
   Phone,
   MapPin,
   Sparkles,
@@ -106,6 +108,8 @@ export const ScholarWorkspace: React.FC<ScholarWorkspaceProps> = ({
   const [manualSaveSuccessNotice, setManualSaveSuccessNotice] = useState(false);
 
   // Edit fields
+  const [editRpcNumber, setEditRpcNumber] = useState<number>(record.rpcNumber || 1);
+  const [showChangeRpcModal, setShowChangeRpcModal] = useState<boolean>(false);
   const [editDate, setEditDate] = useState(record.rpcDate || '');
   const [editTime, setEditTime] = useState(record.meetingTime || '');
   const [editMode, setEditMode] = useState(record.meetingMode || 'ONLINE');
@@ -118,6 +122,7 @@ export const ScholarWorkspace: React.FC<ScholarWorkspaceProps> = ({
 
   // Track values already saved in the database
   const persistedValuesRef = useRef({
+    rpcNumber: record.rpcNumber || 1,
     rpcDate: record.rpcDate || '',
     meetingTime: record.meetingTime || '',
     meetingMode: record.meetingMode || 'ONLINE',
@@ -178,12 +183,14 @@ export const ScholarWorkspace: React.FC<ScholarWorkspaceProps> = ({
     // Only reset field values if record ID has changed to prevent wiping user input
     if (record.id !== currentRecordIdRef.current) {
       currentRecordIdRef.current = record.id;
+      setEditRpcNumber(record.rpcNumber || 1);
       setEditDate(record.rpcDate || '');
       setEditTime(record.meetingTime || '');
       setEditMode(record.meetingMode || 'ONLINE');
       setEditVenue(record.venue || '');
       setEditNotes(record.requestDetails || '');
       persistedValuesRef.current = {
+        rpcNumber: record.rpcNumber || 1,
         rpcDate: record.rpcDate || '',
         meetingTime: record.meetingTime || '',
         meetingMode: record.meetingMode || 'ONLINE',
@@ -192,12 +199,16 @@ export const ScholarWorkspace: React.FC<ScholarWorkspaceProps> = ({
       };
       setAutoSaveStatus('saved');
       setAutoSaveError(null);
+    } else if (record.rpcNumber !== editRpcNumber) {
+      setEditRpcNumber(record.rpcNumber || 1);
+      persistedValuesRef.current.rpcNumber = record.rpcNumber || 1;
     }
   };
 
   // Perform the auto-save to Firestore and update local state
   const performAutoSave = useCallback(
     async (valuesToSave?: {
+      rpcNumber?: number;
       rpcDate?: string;
       meetingTime?: string;
       meetingMode?: 'ONLINE' | 'OFFLINE' | 'HYBRID';
@@ -207,6 +218,7 @@ export const ScholarWorkspace: React.FC<ScholarWorkspaceProps> = ({
       if (!isMountedRef.current) return;
       if (isApproved || isPendingDean || !isOffice) return;
 
+      const numVal = valuesToSave?.rpcNumber !== undefined ? valuesToSave.rpcNumber : editRpcNumber;
       const dateVal = valuesToSave?.rpcDate !== undefined ? valuesToSave.rpcDate : editDate;
       const timeVal = valuesToSave?.meetingTime !== undefined ? valuesToSave.meetingTime : editTime;
       const modeVal = valuesToSave?.meetingMode !== undefined ? valuesToSave.meetingMode : editMode;
@@ -215,6 +227,7 @@ export const ScholarWorkspace: React.FC<ScholarWorkspaceProps> = ({
 
       // Check if values actually differ from persisted values
       const hasChanged =
+        numVal !== persistedValuesRef.current.rpcNumber ||
         dateVal !== persistedValuesRef.current.rpcDate ||
         timeVal !== persistedValuesRef.current.meetingTime ||
         modeVal !== persistedValuesRef.current.meetingMode ||
@@ -232,6 +245,8 @@ export const ScholarWorkspace: React.FC<ScholarWorkspaceProps> = ({
       try {
         let updatedLetterData: OfficialLetterData | undefined = undefined;
         if (record.letterData) {
+          const ordinal = getOrdinalText(numVal);
+
           const formattedDateText = dateVal
             ? formatDisplayDate(dateVal)
             : record.letterData.meetingDateText;
@@ -243,8 +258,22 @@ export const ScholarWorkspace: React.FC<ScholarWorkspaceProps> = ({
               ? 'hybrid mode'
               : 'physical mode';
 
+          let newSubject = record.letterData.subject || '';
+          const oldOrdinalPattern = /(?:1st|2nd|3rd|\d+th|1ˢᵗ|2ⁿᵈ|3ʳᵈ|\d+ᵗʰ)\s+Meeting\s+of\s+the\s+Research\s+Progress\s+Committee/i;
+          if (oldOrdinalPattern.test(newSubject)) {
+            newSubject = newSubject.replace(oldOrdinalPattern, `${ordinal} Meeting of the Research Progress Committee`);
+          }
+
+          let newRefNo = record.letterData.refNo || '';
+          if (/RPC[-\/](?:0\d+|\d+)/i.test(newRefNo)) {
+            newRefNo = newRefNo.replace(/RPC([-\/])(?:0\d+|\d+)/i, `RPC$1${String(numVal).padStart(2, '0')}`);
+          }
+
           updatedLetterData = {
             ...record.letterData,
+            rpcOrdinal: ordinal,
+            subject: newSubject,
+            refNo: newRefNo,
             meetingDateText: formattedDateText,
             meetingTimeText: timeVal || record.letterData.meetingTimeText,
             meetingModeText: formattedModeText,
@@ -255,6 +284,7 @@ export const ScholarWorkspace: React.FC<ScholarWorkspaceProps> = ({
         const updated = await updateRpcRecord(
           record.id,
           {
+            rpcNumber: numVal,
             rpcDate: dateVal,
             meetingTime: timeVal,
             meetingMode: modeVal,
@@ -265,10 +295,11 @@ export const ScholarWorkspace: React.FC<ScholarWorkspaceProps> = ({
           },
           currentUser,
           'Auto-saved RPC Request Fields',
-          `Auto-persisted draft request schedule: ${dateVal} ${timeVal} (${modeVal})`
+          `Auto-persisted draft request schedule: RPC ${numVal}, ${dateVal} ${timeVal} (${modeVal})`
         );
 
         persistedValuesRef.current = {
+          rpcNumber: numVal,
           rpcDate: dateVal,
           meetingTime: timeVal,
           meetingMode: modeVal,
@@ -294,7 +325,7 @@ export const ScholarWorkspace: React.FC<ScholarWorkspaceProps> = ({
         }
       }
     },
-    [editDate, editTime, editMode, editVenue, editNotes, record, currentUser, isApproved, isPendingDean, isOffice, onRecordUpdated]
+    [editRpcNumber, editDate, editTime, editMode, editVenue, editNotes, record, currentUser, isApproved, isPendingDean, isOffice, onRecordUpdated]
   );
 
   // Immediate flush for auto-save (used on blur or before modal transition)
@@ -421,12 +452,13 @@ export const ScholarWorkspace: React.FC<ScholarWorkspaceProps> = ({
 
   // Handle field change with automatic 800ms debounce
   const handleFieldChange = (
-    field: 'rpcDate' | 'meetingTime' | 'meetingMode' | 'venue' | 'requestDetails',
-    value: string
+    field: 'rpcNumber' | 'rpcDate' | 'meetingTime' | 'meetingMode' | 'venue' | 'requestDetails',
+    value: any
   ) => {
     if (isApproved || isPendingDean || !isOffice) return;
 
-    if (field === 'rpcDate') setEditDate(value);
+    if (field === 'rpcNumber') setEditRpcNumber(value);
+    else if (field === 'rpcDate') setEditDate(value);
     else if (field === 'meetingTime') setEditTime(value);
     else if (field === 'meetingMode') setEditMode(value as any);
     else if (field === 'venue') setEditVenue(value);
@@ -439,6 +471,7 @@ export const ScholarWorkspace: React.FC<ScholarWorkspaceProps> = ({
     }
 
     const nextValues = {
+      rpcNumber: field === 'rpcNumber' ? value : editRpcNumber,
       rpcDate: field === 'rpcDate' ? value : editDate,
       meetingTime: field === 'meetingTime' ? value : editTime,
       meetingMode: field === 'meetingMode' ? (value as any) : editMode,
@@ -493,9 +526,24 @@ export const ScholarWorkspace: React.FC<ScholarWorkspaceProps> = ({
 
           <div className="flex flex-col sm:items-end gap-2">
             <div className="flex items-center gap-2">
-              <span className="px-2.5 py-1 rounded bg-stone-100 text-stone-900 font-bold text-xs">
+              <span className="px-2.5 py-1 rounded bg-stone-100 text-stone-900 font-bold text-xs flex items-center gap-1 border border-stone-200">
+                <Hash className="w-3 h-3 text-stone-500" />
                 RPC {record.rpcNumber}
               </span>
+
+              {isOffice && (
+                <button
+                  type="button"
+                  onClick={() => setShowChangeRpcModal(true)}
+                  id="btn-workspace-change-rpc-no"
+                  className="inline-flex items-center gap-1.5 px-2.5 py-1 text-xs font-bold text-sky-800 hover:text-sky-950 bg-sky-50 hover:bg-sky-100 active:bg-sky-200 border border-sky-300 rounded shadow-2xs transition cursor-pointer"
+                  title="Change RPC Number (SDSR Office Authority)"
+                >
+                  <Edit3 className="w-3.5 h-3.5 text-sky-700" />
+                  <span>Change RPC No.</span>
+                </button>
+              )}
+
               <StatusBadge status={record.status} size="md" />
             </div>
 
@@ -900,6 +948,50 @@ export const ScholarWorkspace: React.FC<ScholarWorkspaceProps> = ({
                 </div>
 
                 <div className="space-y-4">
+                  {/* RPC Number Stage Selection for SDSR Office */}
+                  <div className="p-3.5 bg-sky-50/60 border border-sky-200 rounded-lg flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                    <div className="space-y-0.5">
+                      <div className="flex items-center gap-1.5 font-bold text-stone-900 text-xs">
+                        <Hash className="w-4 h-4 text-sky-700" />
+                        <span>RPC Number / Evaluation Stage *</span>
+                      </div>
+                      <p className="text-[11px] text-stone-600">
+                        SDSR Office administrative option: change or correct the RPC level for this scholar
+                      </p>
+                    </div>
+
+                    <div className="flex items-center gap-2">
+                      <div className="flex items-center gap-1 bg-white border border-sky-300 rounded-md px-2 py-1 shadow-2xs">
+                        <span className="text-xs font-bold text-sky-800">RPC</span>
+                        <input
+                          id="input-workspace-rpc-stage"
+                          type="number"
+                          min="1"
+                          value={editRpcNumber}
+                          onChange={(e) => handleFieldChange('rpcNumber', parseInt(e.target.value, 10) || 1)}
+                          onBlur={flushAutoSave}
+                          className="w-20 text-xs font-bold text-stone-900 bg-transparent text-center focus:outline-hidden"
+                          title="Enter any RPC digits (supports thousands e.g. 1000)"
+                          placeholder="e.g. 1000"
+                        />
+                        <span className="text-[11px] text-stone-500 font-medium">
+                          ({getOrdinalText(editRpcNumber)})
+                        </span>
+                      </div>
+
+                      <button
+                        type="button"
+                        onClick={() => setShowChangeRpcModal(true)}
+                        id="btn-open-change-rpc-modal-tab1"
+                        className="inline-flex items-center gap-1 px-2.5 py-1.5 text-xs font-semibold text-sky-800 bg-white hover:bg-sky-100 border border-sky-300 rounded-md transition shadow-2xs cursor-pointer shrink-0"
+                        title="Advanced options and audit reasons for RPC number change"
+                      >
+                        <Edit3 className="w-3 h-3 text-sky-700" />
+                        <span>Change RPC Dialog</span>
+                      </button>
+                    </div>
+                  </div>
+
                   <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
                     <div>
                       <label htmlFor="input-rpc-date" className="block font-semibold text-stone-700 mb-1">
@@ -1021,6 +1113,29 @@ export const ScholarWorkspace: React.FC<ScholarWorkspaceProps> = ({
             ) : (
               /* If Read-Only / Locked: Display Clean Summary Grid */
               <div className="space-y-4 text-xs">
+                {isOffice && (
+                  <div className="p-3.5 bg-sky-50/80 border border-sky-200 rounded-lg flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-xs">
+                    <div className="flex items-center gap-2 text-sky-950">
+                      <Hash className="w-4 h-4 text-sky-700 shrink-0" />
+                      <div>
+                        <span className="font-bold">Currently Evaluated as RPC {record.rpcNumber}</span>
+                        <p className="text-[11px] text-sky-800">
+                          SDSR Office administrative authority: You can adjust this scholar's RPC evaluation number.
+                        </p>
+                      </div>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => setShowChangeRpcModal(true)}
+                      id="btn-workspace-change-rpc-locked"
+                      className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-bold text-sky-800 hover:text-sky-950 bg-white hover:bg-sky-100 border border-sky-300 rounded shadow-2xs transition cursor-pointer shrink-0"
+                    >
+                      <Edit3 className="w-3.5 h-3.5 text-sky-700" />
+                      <span>Change RPC No.</span>
+                    </button>
+                  </div>
+                )}
+
                 <div className="p-3 bg-stone-50 border border-stone-200 rounded-lg flex items-center gap-2 text-stone-600">
                   <Lock className="w-4 h-4 text-stone-500 shrink-0" />
                   <span>
@@ -1298,8 +1413,22 @@ export const ScholarWorkspace: React.FC<ScholarWorkspaceProps> = ({
                   Strict sequencing: Previous RPCs are locked, future stages unlock only after Dean approval
                 </p>
               </div>
-              <div className="text-xs text-stone-600 bg-stone-100 px-3 py-1 rounded">
-                Current Stage: <strong>RPC {record.rpcNumber}</strong>
+              <div className="flex items-center gap-2">
+                <div className="text-xs text-stone-600 bg-stone-100 px-3 py-1 rounded">
+                  Current Stage: <strong>RPC {record.rpcNumber}</strong>
+                </div>
+                {isOffice && (
+                  <button
+                    type="button"
+                    onClick={() => setShowChangeRpcModal(true)}
+                    id="btn-history-change-rpc"
+                    className="inline-flex items-center gap-1 px-2.5 py-1 text-xs font-semibold text-sky-800 hover:text-sky-950 bg-white hover:bg-sky-50 border border-sky-300 rounded shadow-2xs transition cursor-pointer"
+                    title="Change RPC Stage Number (SDSR Office Authority)"
+                  >
+                    <Edit3 className="w-3 h-3 text-sky-700" />
+                    <span>Change RPC No.</span>
+                  </button>
+                )}
               </div>
             </div>
 
@@ -1808,6 +1937,24 @@ export const ScholarWorkspace: React.FC<ScholarWorkspaceProps> = ({
           </div>
         )}
       </div>
+
+      {/* Change RPC Number Modal */}
+      {showChangeRpcModal && (
+        <ChangeRpcNumberModal
+          record={record}
+          isOpen={showChangeRpcModal}
+          onClose={() => setShowChangeRpcModal(false)}
+          onSuccess={(updated) => {
+            onRecordUpdated(updated);
+            setEditRpcNumber(updated.rpcNumber);
+            persistedValuesRef.current.rpcNumber = updated.rpcNumber;
+            loadScholarData();
+            setShowChangeRpcModal(false);
+          }}
+          currentUser={currentUser}
+          existingRecords={history}
+        />
+      )}
     </div>
   );
 };
